@@ -11,6 +11,7 @@ Decisions locked this revision:
 - **Repo name: `theta`.**
 - **Host: same box as edge-bot prod (`edge-bot-prod-us-1`, `ash`), as theta's own Docker Compose project** — *not* a separate VM. The `ccx33` upgrade gave the box the headroom; container-level isolation (own Redis/MySQL/Horizon + resource limits) replaces host separation. (Revises §5/§7/§11 from the separate-node draft.)
 - **Repo stays separate** (separate git repo + separate compose project) — deploy-blast-radius and operating-context isolation are repo-level, independent of box size.
+- **Deployment boundary: theta only** — a theta deploy may update `/srv/theta`, run theta migrations, and restart/recreate containers in compose project `theta` only. It must not restart, reload, migrate, or otherwise touch the Kalshi/perp compose project.
 
 ## 0. Relationship to the architecture doc
 
@@ -144,6 +145,21 @@ Bare repo + work-tree checkout (matches edge-bot's `--git-dir` setup). `deploy/p
 
 **No vite/npm step** (headless repo). Isolation that matters: `-p theta` is a **distinct compose project** — its own containers, network, Redis, and MySQL. This hook touches only theta's project; it cannot reach the perp stack's containers, network, or Redis. A theta migration runs against theta's MySQL only. The `hetzner` remote is never added here, so a theta push has no path to the perp deploy at all.
 
+Deployment access criteria:
+
+```text
+allowed: git checkout into /srv/theta
+allowed: docker compose -p theta ...
+allowed: theta MySQL migrations only
+allowed: theta Redis/Horizon/scheduler/app/web/greeks container restart or recreate
+forbidden: docker compose against the Kalshi/perp project
+forbidden: restarting edge-bot/perp workers, scheduler, Horizon, Redis, MySQL, or web containers
+forbidden: migrations against edge-bot/perp databases
+forbidden: joining theta containers to the perp Docker network
+```
+
+Same box is acceptable because the repository and compose project are the boundary solution. The deployment command itself must carry that boundary by using `-p theta` and theta paths only.
+
 ## 6. Telemetry contract — the "one dashboard" path
 
 Same box, but separate compose projects sit on **separate Docker networks**, so "one pane of glass" is still a deliberate transport (not a shared DB read). Chosen model: **pull**, read-only, additive.
@@ -170,6 +186,15 @@ All services are containers under compose project `theta`, on theta's own bridge
 | `mysql` | `robinhood_trade_journal` + harness state | own container/volume |
 
 Host-level Tailscale (already on the box) covers admin SSH; theta needs no Tailscale of its own. The only resources shared with perp are kernel/CPU/RAM/disk — bounded by the container limits and the `ccx33` headroom.
+
+Operational boundary readback after every deploy:
+
+```text
+docker compose -p theta ps
+docker compose -p theta logs --tail=<n> <changed-service>
+confirm no edge-bot/perp container restart timestamps changed
+confirm theta is not attached to the perp network
+```
 
 ## 8. Config & secrets (`config/harness.php` + `.env`)
 
@@ -240,5 +265,6 @@ Additive choices after scaffold:
 - Do not add the Kalshi `hetzner` remote to this repo.
 - Do not copy edge-bot's perp/Kalshi code, ledgers, or war-room CLAUDE.md.
 - **Do not share the perp compose project's Redis, MySQL, or network.** theta is its own `-p theta` project with its own services; never point theta at the perp Redis or join its network. Always set per-container CPU/mem limits.
+- **Do not restart or reload Kalshi/perp services during theta deploys.** A theta deploy targets only theta's worktree, theta's database, and theta's compose project.
 - Do not stand up a frontend build in the theta repo unless the dashboard decision flips to the standalone cockpit.
 - Do not bypass the spine, reconciliation, or idempotency path for any live order. Live orders go through the deterministic harness, not ad hoc calls.

@@ -62,6 +62,39 @@ Python only for stateless math/compute behind HTTP
 
 The first tradable substrate is live U.S. equities in the pinned agentic cash account. That account is the sandbox. The options lane is prepared as journal rows, deterministic math payloads, resolver logic, and order-path integration points until Robinhood exposes and permits the required option order tools for the agentic account.
 
+## Deployment Boundary
+
+theta runs on the same production host as edge-bot, but theta is its own boundary solution:
+
+```text
+theta repo: /Users/kendallhayes/projects/theta locally, ~/theta.git on the host
+theta worktree: /srv/theta on the host
+theta compose project: docker compose -p theta
+theta services: app/web/horizon/scheduler/greeks/redis/mysql
+```
+
+Allowed theta deploy actions:
+
+```text
+push to theta remote
+checkout into /srv/theta
+run theta migrations against theta MySQL only
+restart or recreate theta compose services only
+read theta logs/status/telemetry
+```
+
+Forbidden during theta deploys:
+
+```text
+do not restart Kalshi/perp services
+do not reload edge-bot Horizon, scheduler, workers, Redis, MySQL, or web containers
+do not run migrations against edge-bot/perp databases
+do not point theta at perp Redis/MySQL
+do not attach theta containers to the perp Docker network
+```
+
+Same box is acceptable. The theta repository plus `docker compose -p theta` is the operational boundary. A theta deploy that restarts Kalshi/perp services is a deployment defect.
+
 ## Core Architecture Law
 
 No model is allowed on the execution path.

@@ -12,6 +12,7 @@ Decisions locked this revision:
 - **Execution client: native PHP MCP client** (A1) — a typed JSON-RPC-over-HTTPS client to the `robinhood-trading` MCP, holding the OAuth token. No Python on the order path; this preserves the firm invariant (all order submission is PHP; Python is stateless compute behind HTTP).
 - **Host: same box as edge-bot prod (`edge-bot-prod-us-1`, `ash`/us-east), as its own Docker Compose stack** — *not* a separate VM. The `ccx33` upgrade (8 dedicated vCPU / 32 GB, ~26 GiB free) removed the strain premise that drove the separate-box plan; container-level isolation (own Redis, own Horizon, own MySQL, resource limits) gives service isolation without a second machine. A second box is a deferred scale option, cheap to take later *because the repo stays separate*. (Revises the §9.2 separate-node draft.)
 - **Repo: separate repo + separate compose project** — the deploy-blast-radius and operating-context isolation are repo-level concerns, independent of box size, so they stay. theta never shares the perp Redis or queues.
+- **Theta deploys do not restart Kalshi/perp** — deployment uses theta's bare repo, theta worktree, theta database, and `docker compose -p theta` only. The shared host is an allowed placement; the theta repository and compose project are the boundary solution.
 - **Market data: Alpaca Algo Trader Plus / SIP for v0** — `feed=sip`, `https://data.alpaca.markets`, `wss://stream.data.alpaca.markets/v2/sip`; keys live in local `.env` as `ALPACA_DATA_*`. Robinhood MCP remains the broker/control plane, not the scanner feed.
 - **Live path: agent-account equity execution first** — the Robinhood agentic cash account is already the sandbox. theta proves itself by placing bounded live equity orders through that account under deterministic rails, then reading broker/account truth.
 - **Next characterization item: headless-auth / session-TTL** (§13) — measure the token lifecycle for always-on operation; this does not block live equity bring-up, data plane, rails, journal, or telemetry build-out.
@@ -182,6 +183,7 @@ Because prod runs on **Docker Compose**, same-box does not mean shared-services.
 - **Hard requirement — theta gets its own Redis container.** It **never** shares the perp hot path's Redis. A key collision, memory bloat, or a stray `FLUSHALL` in an early-stage harness must not be able to reach the live book's `kalshi:live:*` keys or perp queues. Separate compose project makes this automatic.
 - **Hard requirement — CPU/memory limits on theta's containers** (compose `deploy.resources` / `mem_limit` + `cpus`), so a runaway theta process cannot starve the perp path at market open. Cheap insurance against the one shared resource (kernel/CPU/RAM).
 - **Own MySQL, own Horizon, own scheduler** — separate containers/connections; theta's queues and cron never mingle with perp's.
+- **Deploy isolation requirement — no Kalshi/perp restarts.** A theta deployment may recreate theta containers only. It must not invoke the perp compose project, restart edge-bot services, run perp migrations, or attach theta to the perp network.
 
 **Isolation we keep vs. give up:**
 - *Keep:* deploy blast-radius isolation (separate repo + separate hook — a theta push cannot deploy/migrate toward the perp stack), operating-context isolation, and container-level service isolation (Redis/MySQL/queues).
@@ -241,6 +243,7 @@ Option order submission activates when Robinhood exposes the required tools (`ge
 - Do not route option orders until RH review/place tools exist (companion plan §Non-Goals).
 - Reuse the PHP/Laravel stack and patterns, but do **not** inject this venue into the running Kalshi/perp hot-path process, its scheduler entries, or its queues — it is a sibling command surface in its **own Docker Compose project** on the same box (§9.1–9.2).
 - **Never share the perp hot path's Redis or queues.** theta runs its own Redis/MySQL/Horizon containers; no logical-DB sharing of the live book's `kalshi:live:*` keyspace. Enforce CPU/memory limits on theta's containers.
+- **Never restart Kalshi/perp services as part of theta deployment.** The deploy boundary is theta repo → theta worktree → theta compose project.
 - Keep Python stateless: the Greeks/EV service is compute-behind-HTTP only — it never submits orders or writes trading state (firm invariant).
 - Do not adopt operator manual positions (the harness only touches its own `placed_agent='agentic'` orders).
 - Do not loosen the existing EV / kill-trigger rules to manufacture volume.
