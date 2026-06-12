@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\AssemblesHarnessConfig;
 use App\Models\RobinhoodTradeJournal;
+use App\Robinhood\Execution\SettledCashEstimator;
 use App\Robinhood\Mcp\OAuthTokenStore;
 use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
@@ -44,12 +45,17 @@ class BrokerReadbackCommand extends Command
             return self::FAILURE;
         }
 
-        $settledCash = PortfolioReader::settledCash($portfolio);
+        $brokerOrderRows = PortfolioReader::listFrom($orders);
+        $cashEstimate = (new SettledCashEstimator)->fromBrokerTruth($portfolio, $brokerOrderRows);
+        $settledCash = $cashEstimate['settled_cash'];
         $buyingPower = PortfolioReader::buyingPower($portfolio);
 
         $this->info("account (pinned): {$cfg['agentic_account']}");
         $this->table(['field', 'value'], [
+            ['cash', (string) (PortfolioReader::cash($portfolio) ?? 'unverified')],
             ['settled_cash', $settledCash === null ? 'UNVERIFIED — patch/read the account source' : (string) $settledCash],
+            ['unsettled_sell_proceeds', (string) $cashEstimate['unsettled_sell_proceeds']],
+            ['settled_cash_source', (string) ($cashEstimate['assumptions']['source'] ?? $cashEstimate['assumptions']['model'] ?? 'unknown')],
             ['buying_power', $buyingPower === null ? 'unverified' : (string) $buyingPower],
             ['open_positions', (string) count(PortfolioReader::listFrom($positions))],
         ]);
@@ -61,7 +67,7 @@ class BrokerReadbackCommand extends Command
             ->map(fn (RobinhoodTradeJournal $row) => $row->only(['client_ref_id', 'broker_order_id', 'status', 'symbol', 'side']))
             ->all();
 
-        $result = $reconciler->reconcile(PortfolioReader::listFrom($orders), $journalRows);
+        $result = $reconciler->reconcile($brokerOrderRows, $journalRows);
 
         $this->table(
             ['classification', 'count'],

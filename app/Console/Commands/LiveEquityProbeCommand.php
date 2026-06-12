@@ -8,6 +8,7 @@ use App\Console\Commands\Concerns\AssemblesHarnessConfig;
 use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Execution\EquityExecutor;
 use App\Robinhood\Execution\OrderRefStore;
+use App\Robinhood\Execution\SettledCashEstimator;
 use App\Robinhood\Mcp\OAuthTokenStore;
 use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
@@ -154,8 +155,12 @@ class LiveEquityProbeCommand extends Command
             $symbolOpenDebit[$rowSymbol] = ($symbolOpenDebit[$rowSymbol] ?? 0.0) + $debit;
         }
 
+        $cashEstimate = (new SettledCashEstimator)->fromBrokerTruth($portfolio, $openOrders);
+
         return [
-            'settled_cash' => PortfolioReader::settledCash($portfolio),
+            'settled_cash' => $cashEstimate['settled_cash'],
+            'settled_cash_assumptions' => $cashEstimate['assumptions'],
+            'unsettled_sell_proceeds' => $cashEstimate['unsettled_sell_proceeds'],
             'buying_power' => PortfolioReader::buyingPower($portfolio),
             'spent_today_debit' => $spentToday,
             'symbol_open_debit' => $symbolOpenDebit,
