@@ -73,7 +73,7 @@ class RobinhoodOAuthListenCommand extends Command
         }
 
         $body = "<!doctype html><meta charset=\"utf-8\"><title>Theta OAuth</title><body><h1>{$message}</h1></body>";
-        fwrite($conn, "HTTP/1.1 ".($ok ? '200 OK' : '500 Internal Server Error')."\r\n");
+        fwrite($conn, 'HTTP/1.1 '.($ok ? '200 OK' : '500 Internal Server Error')."\r\n");
         fwrite($conn, "Content-Type: text/html; charset=utf-8\r\n");
         fwrite($conn, 'Content-Length: '.strlen($body)."\r\n\r\n");
         fwrite($conn, $body);
