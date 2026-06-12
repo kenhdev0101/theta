@@ -1,0 +1,9 @@
+parameters:
+    level: 2
+    paths:
+        - app
+    ignoreErrors:
+        # Horizon's published provider stub gates by optional($user)->email.
+        -
+            message: '#Access to an undefined property Illuminate\\Support\\Optional::\$email#'
+            path: app/Providers/HorizonServiceProvider.php
