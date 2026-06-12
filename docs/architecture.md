@@ -13,6 +13,7 @@ Decisions locked this revision:
 - **Host: same box as edge-bot prod (`edge-bot-prod-us-1`, `ash`/us-east), as its own Docker Compose stack** — *not* a separate VM. The `ccx33` upgrade (8 dedicated vCPU / 32 GB, ~26 GiB free) removed the strain premise that drove the separate-box plan; container-level isolation (own Redis, own Horizon, own MySQL, resource limits) gives service isolation without a second machine. A second box is a deferred scale option, cheap to take later *because the repo stays separate*. (Revises the §9.2 separate-node draft.)
 - **Repo: separate repo + separate compose project** — the deploy-blast-radius and operating-context isolation are repo-level concerns, independent of box size, so they stay. theta never shares the perp Redis or queues.
 - **Theta deploys do not restart Kalshi/perp** — deployment uses theta's bare repo, theta worktree, theta database, and `docker compose -p theta` only. The shared host is an allowed placement; the theta repository and compose project are the boundary solution.
+- **Docker-first build/deploy** — the local implementation environment and Hetzner deployment environment are the same theta Docker Compose stack. Dependency installation and framework commands run inside theta containers, not directly on the Mac or host.
 - **Market data: Alpaca Algo Trader Plus / SIP for v0** — `feed=sip`, `https://data.alpaca.markets`, `wss://stream.data.alpaca.markets/v2/sip`; keys live in local `.env` as `ALPACA_DATA_*`. Robinhood MCP remains the broker/control plane, not the scanner feed.
 - **Live path: agent-account equity execution first** — the Robinhood agentic cash account is already the sandbox. theta proves itself by placing bounded live equity orders through that account under deterministic rails, then reading broker/account truth.
 - **Next characterization item: headless-auth / session-TTL** (§13) — measure the token lifecycle for always-on operation; this does not block live equity bring-up, data plane, rails, journal, or telemetry build-out.
@@ -64,7 +65,7 @@ The contract, stated as law:
 
 ## 3. System topology
 
-All of the below runs as **theta's own Docker Compose project on the existing `edge-bot-prod-us-1` (`ash`/us-east) box** — separate containers, separate network, separate Redis/MySQL/Horizon from the perp compose stack (not a separate VM; §9.2). The decision, rail, and execution layers are **PHP (reused edge-bot/Laravel stack)**; only the Greeks/EV primitives are **Python, reached over local HTTP** (the firm's stateless-compute-behind-HTTP pattern), never on the order path.
+All of the below runs as **theta's own Docker Compose project locally and on the existing `edge-bot-prod-us-1` (`ash`/us-east) box** — same container definitions, separate containers, separate network, separate Redis/MySQL/Horizon from the perp compose stack (not a separate VM; §9.2). The decision, rail, and execution layers are **PHP (reused edge-bot/Laravel stack)**; only the Greeks/EV primitives are **Python, reached over local HTTP** (the firm's stateless-compute-behind-HTTP pattern), never on the order path.
 
 ```
    ╔══════════════════ theta compose project on edge-bot-prod-us-1 (own network/Redis/MySQL) ═══════════════╗
@@ -184,6 +185,7 @@ Because prod runs on **Docker Compose**, same-box does not mean shared-services.
 - **Hard requirement — CPU/memory limits on theta's containers** (compose `deploy.resources` / `mem_limit` + `cpus`), so a runaway theta process cannot starve the perp path at market open. Cheap insurance against the one shared resource (kernel/CPU/RAM).
 - **Own MySQL, own Horizon, own scheduler** — separate containers/connections; theta's queues and cron never mingle with perp's.
 - **Deploy isolation requirement — no Kalshi/perp restarts.** A theta deployment may recreate theta containers only. It must not invoke the perp compose project, restart edge-bot services, run perp migrations, or attach theta to the perp network.
+- **Docker parity requirement — local equals deploy.** Build, dependency installation, migrations, tests, and service commands run through `docker compose -p theta` locally first, then the same compose project is deployed on Hetzner. Host-level Composer/npm/pip installs are not the implementation path.
 
 **Isolation we keep vs. give up:**
 - *Keep:* deploy blast-radius isolation (separate repo + separate hook — a theta push cannot deploy/migrate toward the perp stack), operating-context isolation, and container-level service isolation (Redis/MySQL/queues).

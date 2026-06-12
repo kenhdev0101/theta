@@ -12,6 +12,7 @@ Decisions locked this revision:
 - **Host: same box as edge-bot prod (`edge-bot-prod-us-1`, `ash`), as theta's own Docker Compose project** — *not* a separate VM. The `ccx33` upgrade gave the box the headroom; container-level isolation (own Redis/MySQL/Horizon + resource limits) replaces host separation. (Revises §5/§7/§11 from the separate-node draft.)
 - **Repo stays separate** (separate git repo + separate compose project) — deploy-blast-radius and operating-context isolation are repo-level, independent of box size.
 - **Deployment boundary: theta only** — a theta deploy may update `/srv/theta`, run theta migrations, and restart/recreate containers in compose project `theta` only. It must not restart, reload, migrate, or otherwise touch the Kalshi/perp compose project.
+- **Docker-first implementation** — local development and Hetzner deployment use the same theta Docker Compose stack. Do not install Composer/npm/Python dependencies directly on the host as the primary path; dependency installation, Artisan commands, tests, and Python setup run inside theta containers.
 
 ## 0. Relationship to the architecture doc
 
@@ -31,7 +32,7 @@ We do **not** start cold. The genuinely Robinhood-specific code already written 
 | `database/migrations/2026_06_09_000001_create_robinhood_trade_journal_table.php` | `database/migrations/` | None (idempotent, no cross-table FK). |
 | `database/migrations/2026_06_09_000002_widen_*_state_columns.php` | `database/migrations/` | None. |
 | `database/migrations/2026_06_09_000003_widen_*_experiment_labels.php` | `database/migrations/` | None. |
-| `tools/options-math/` (all scripts + `setup.sh` + `requirements.txt` + README) | `tools/options-math/` | None; rebuild `.venv` via `setup.sh` (or bake into the greeks container image). |
+| `tools/options-math/` (all scripts + `setup.sh` + `requirements.txt` + README) | `tools/options-math/` | None; install Python requirements in the `greeks` container image. Host `.venv` is not the primary path. |
 | `tools/equity-structure/` (trend_geometry, intraday_loop_scanner, relative_strength, breadth_engine, gap_classifier, liquidity_scanner, market_structure_scanner, earnings_regime, common, universe_tiers.json, README) | `tools/equity-structure/` | None to move; this is the prototyped structure-classifier + RS + universe substrate (anatomy doc §13). Re-home onto the real feed + add the transition layer in the engine, not here. |
 | `docs/architecture.md` | `docs/architecture.md` | Move; fix relative refs. |
 | `docs/options-infrastructure-plan.md` | `docs/options-infrastructure-plan.md` | Move. |
@@ -77,10 +78,34 @@ Everything Kalshi/perp: the state machine, perp combination ledger, agent coordi
 | **Decision-layer model client** | `laravel/ai` | `^0.2` — already a firm dep; the model orchestrator uses this, no new SDK |
 | Lint/static | Pint, PHPStan | `^1.13`, `^2.1` |
 | Tests | PHPUnit | `^11.0` |
-| Greeks/EV compute | Python 3 + venv | standalone `tools/options-math/` |
+| Greeks/EV compute | Python 3 in `greeks` container | standalone `tools/options-math/`; no host venv required for the primary path |
 | **Frontend** | **None in this repo** (headless) | see §6 — dashboard is a panel in edge-bot MC |
 
 **Dropped vs edge-bot:** `inertiajs/inertia-laravel`, `tightenco/ziggy` (no frontend here), `ratchet/pawl` (no Kalshi WS), `spatie/laravel-backup` (optional later). The headless choice removes the vite build from the deploy hook — smaller, faster, lower blast radius.
+
+### 3.1 Docker-First Build Rule
+
+The first implementation artifact after docs is the Docker scaffold:
+
+```text
+docker-compose.yml
+docker/app/Dockerfile
+docker/web/default.conf
+services/greeks/Dockerfile
+```
+
+All framework/dependency commands run inside containers:
+
+```text
+docker compose -p theta build
+docker compose -p theta run --rm app composer create-project laravel/laravel /tmp/theta-laravel
+docker compose -p theta run --rm app composer require ...
+docker compose -p theta run --rm app php artisan ...
+docker compose -p theta run --rm app vendor/bin/phpunit
+docker compose -p theta run --rm greeks pip install -r requirements.txt
+```
+
+Do not bootstrap theta by installing Composer packages, Laravel, npm assets, or Python venvs directly on the Mac or on the Hetzner host. Host installs are allowed only as emergency diagnostics; if used, the result must be captured back into Dockerfiles/compose so the container remains the source of truth.
 
 ## 4. Target directory structure
 
@@ -121,6 +146,9 @@ theta/
 ├── config/harness.php                       # account pin, caps, flags, MCP endpoint
 ├── database/migrations/                     # moved
 ├── docker-compose.yml                       # theta's own compose project (php, horizon, scheduler, greeks, redis, mysql)
+├── docker/
+│   ├── app/Dockerfile                       # PHP/Laravel runtime + Composer deps
+│   └── web/default.conf                     # nginx vhost for theta only
 ├── tests/
 ├── docs/
 └── deploy/post-receive                      # the theta deploy hook (committed; installed on box)
@@ -139,9 +167,10 @@ Bare repo + work-tree checkout (matches edge-bot's `--git-dir` setup). `deploy/p
 
 1. `git --work-tree=/srv/theta --git-dir=/home/edge/theta.git checkout -f main`
 2. `docker compose -p theta -f /srv/theta/docker-compose.yml build`
-3. `docker compose -p theta ... run --rm app php artisan migrate --force`
-4. `docker compose -p theta ... run --rm app php artisan config:cache route:cache`
-5. `docker compose -p theta ... up -d` (recreates only changed theta containers; Horizon/scheduler pick up new code on restart)
+3. `docker compose -p theta ... run --rm app composer install --no-dev --optimize-autoloader`
+4. `docker compose -p theta ... run --rm app php artisan migrate --force`
+5. `docker compose -p theta ... run --rm app php artisan config:cache route:cache`
+6. `docker compose -p theta ... up -d` (recreates only changed theta containers; Horizon/scheduler pick up new code on restart)
 
 **No vite/npm step** (headless repo). Isolation that matters: `-p theta` is a **distinct compose project** — its own containers, network, Redis, and MySQL. This hook touches only theta's project; it cannot reach the perp stack's containers, network, or Redis. A theta migration runs against theta's MySQL only. The `hetzner` remote is never added here, so a theta push has no path to the perp deploy at all.
 
@@ -150,8 +179,10 @@ Deployment access criteria:
 ```text
 allowed: git checkout into /srv/theta
 allowed: docker compose -p theta ...
+allowed: composer/npm/php artisan/pip only inside theta containers
 allowed: theta MySQL migrations only
 allowed: theta Redis/Horizon/scheduler/app/web/greeks container restart or recreate
+forbidden: installing app dependencies directly on the shared host as the deploy path
 forbidden: docker compose against the Kalshi/perp project
 forbidden: restarting edge-bot/perp workers, scheduler, Horizon, Redis, MySQL, or web containers
 forbidden: migrations against edge-bot/perp databases
@@ -227,20 +258,20 @@ The new repo gets a **scoped** `CLAUDE.md`, seeded from the architecture doc's l
 
 ## 10. CI / tests / local dev
 
-- **Local dev loop:** sqlite + `php artisan serve` + fixture-backed broker transport for unit tests. Integration proof is live against the sandboxed Robinhood agent account.
+- **Local dev loop:** `docker compose -p theta up -d` + fixture-backed broker transport for unit tests. Integration proof is live against the sandboxed Robinhood agent account. Do not use `php artisan serve` or host-level Composer installs as the primary path.
 - **CI:** Pint + PHPStan + PHPUnit. Use a local pre-push script immediately; add GitHub Actions when a GitHub origin is created.
 - **Required test classes:** rail-pipeline exact-outcome tests, idempotency/ref_id replay, reconciliation label-conflict detection, and the **command `$cfg`-assembly regression** (the firm's inert-patch guard).
 
 ## 11. Bootstrap sequence (ordered — the actual checklist)
 
 1. Execute this bootstrap sequence. Name, host, local bare repo, and data vendor are locked; dashboard/GitHub choices are additive and do not block scaffold work.
-2. `laravel new theta` (Laravel 12); commit the clean skeleton.
-3. Add deps (§3); remove the frontend deps; `composer install`.
-4. **Move** the §1.1 files in; renamespace the journal model; `composer dump-autoload`.
-5. **Port** `KellyService` (§1.2); build the Python FastAPI Greeks wrapper around `tools/options-math/`.
-6. Write `config/harness.php` + `.env` (§8); seed the scoped `CLAUDE.md` (§9).
-7. Author `docker-compose.yml` (§7): `app`/`web`/`horizon`/`scheduler`/`greeks`/`redis`/`mysql`, theta's own network, **per-container CPU/mem limits**, telemetry published on `127.0.0.1:8790`. Local dev uses fixtures for unit tests; integration proof uses the live agent account.
-8. `php artisan migrate` (local) → journal table exists.
+2. Author Docker scaffold first: `docker-compose.yml`, `docker/app/Dockerfile`, `docker/web/default.conf`, `services/greeks/Dockerfile`, theta network/volumes, **per-container CPU/mem limits**, telemetry published on `127.0.0.1:8790`.
+3. Create the Laravel 12 skeleton from inside the `app` container into a temporary container path, then copy it into the repo while preserving existing `CLAUDE.md`, `docs/`, `.env`, `.gitignore`, and git metadata. Commit the clean skeleton. Do not run `laravel new` or Composer on the host as the primary path.
+4. Add deps (§3) from inside the `app` container; remove frontend deps; run Composer inside the container.
+5. **Move** the §1.1 files in; renamespace the journal model; run `composer dump-autoload` inside the `app` container.
+6. **Port** `KellyService` (§1.2); build the FastAPI Greeks wrapper around `tools/options-math/` inside the `greeks` container.
+7. Write `config/harness.php` + `.env` (§8); seed the scoped `CLAUDE.md` (§9).
+8. `docker compose -p theta run --rm app php artisan migrate` → journal table exists in theta's local containerized DB.
 9. Build the **spine** from arch doc §12.1: `RobinhoodMcpClient` + `RailPipeline` + idempotency persistence + reconciliation + JSONL/journal, driven by a bounded live equity intent in the sandboxed agent account. Green focused tests first, then live broker/account truth.
 10. On `edge-bot-prod-us-1`: create the bare repo `~/theta.git` + `deploy/post-receive` (§5); first `git push theta`. Verify the `theta` compose project comes up with its **own** Redis/MySQL — confirm no container/network/Redis overlap with the perp project (`docker compose -p theta ps`; check networks).
 11. **First live broker pass:** point `RobinhoodMcpClient` at the real MCP, validate OAuth/account pin with `get_portfolio` and `get_equity_positions`, then run the first bounded live equity order through review → rail verdict → place → reconcile.

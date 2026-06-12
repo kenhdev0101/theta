@@ -95,6 +95,34 @@ do not attach theta containers to the perp Docker network
 
 Same box is acceptable. The theta repository plus `docker compose -p theta` is the operational boundary. A theta deploy that restarts Kalshi/perp services is a deployment defect.
 
+## Docker-First Implementation
+
+theta is built and run through Docker from the first implementation step. The same theta containers used locally are the containers deployed on the Hetzner box.
+
+Primary path:
+
+```text
+docker compose -p theta build
+docker compose -p theta up -d
+docker compose -p theta run --rm app composer ...
+docker compose -p theta run --rm app php artisan ...
+docker compose -p theta run --rm app vendor/bin/phpunit
+docker compose -p theta run --rm greeks ...
+```
+
+Do not install Laravel, Composer packages, npm packages, Python packages, or Python virtualenvs directly on the Mac or Hetzner host as the implementation path. If a host-level diagnostic command is unavoidable, capture the resulting dependency/configuration back into `docker/app/Dockerfile`, `services/greeks/Dockerfile`, `docker-compose.yml`, `composer.json`, or `requirements.txt` immediately.
+
+The first scaffold task is Docker:
+
+```text
+docker-compose.yml
+docker/app/Dockerfile
+docker/web/default.conf
+services/greeks/Dockerfile
+```
+
+Only after those exist should framework bootstrapping and dependency installation proceed, and those commands must run inside theta containers.
+
 ## Core Architecture Law
 
 No model is allowed on the execution path.
@@ -680,6 +708,7 @@ The operating docs that define the starting design are:
 ```text
 docs/architecture.md
 docs/bootstrap.md
+docs/implementation-prompt.md
 docs/options-infrastructure-plan.md
 docs/intraday-structure-engine.md
 ```
