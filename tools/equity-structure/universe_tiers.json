@@ -1,0 +1,57 @@
+{
+  "tier_1_always_scan": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "DIA",
+    "SMH",
+    "SOXX",
+    "XLF",
+    "XLK",
+    "XLE",
+    "NVDA",
+    "AAPL",
+    "MSFT",
+    "META",
+    "AMZN",
+    "AMD",
+    "TSLA",
+    "GOOGL"
+  ],
+  "tier_2_expand_when_sparse": [
+    "ADBE",
+    "AVGO",
+    "CRM",
+    "NFLX",
+    "PLTR",
+    "UBER",
+    "COIN",
+    "INTC",
+    "MU",
+    "PANW",
+    "SNOW",
+    "SHOP",
+    "ARM",
+    "ASML",
+    "TSM"
+  ],
+  "tier_3_dynamic_expansion_policy": {
+    "trigger": "Tier 2 still produces insufficient opportunities",
+    "rank_universe": "top 200 U.S. equities",
+    "rank_by": [
+      "dollar_volume",
+      "average_daily_volume",
+      "spread_tightness",
+      "option_activity_if_available",
+      "institutional_participation"
+    ],
+    "select_top_n": 25,
+    "exclude": [
+      "penny_stocks",
+      "adrs_with_poor_liquidity",
+      "leveraged_etfs",
+      "low_volume_biotech",
+      "thinly_traded_small_caps"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+# Options-math toolkit deps. Standalone — kept separate from ml/requirements.txt
+# so the manual options-playbook track has no dependency on the ML training stack.
+
+yfinance==0.2.65      # Apache-2.0 — Yahoo Finance OHLC + option chains, free
+curl_cffi>=0.7.0      # MIT — browser-impersonating HTTP client (yfinance's official workaround for Yahoo's anti-scraping)
+numpy==2.0.2          # BSD — math primitives, last 3.9-compatible release
+pandas==2.2.3         # BSD — DataFrame ops on yfinance returns

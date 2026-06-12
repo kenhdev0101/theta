@@ -1,0 +1,4 @@
+# Greeks/EV compute service deps. tools/options-math/requirements.txt is
+# installed alongside this file in services/greeks/Dockerfile.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0

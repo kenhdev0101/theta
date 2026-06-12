@@ -1,0 +1,122 @@
+# theta — Robinhood agentic execution harness, own compose project.
+# Operational boundary: every invocation uses `docker compose -p theta`.
+# Never attach these services to the edge-bot/perp network or point them at perp Redis/MySQL.
+name: theta
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    image: theta/app
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [theta]
+    cpus: "2"
+    mem_limit: 1g
+
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      # Telemetry contract: published on host loopback only (bootstrap §6).
+      - "127.0.0.1:8790:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/web/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [app]
+    networks: [theta]
+    cpus: "0.5"
+    mem_limit: 256m
+
+  horizon:
+    image: theta/app
+    command: php artisan horizon
+    working_dir: /var/www/html
+    restart: unless-stopped
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [theta]
+    cpus: "2"
+    mem_limit: 1g
+
+  scheduler:
+    image: theta/app
+    command: php artisan schedule:work
+    working_dir: /var/www/html
+    restart: unless-stopped
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks: [theta]
+    cpus: "1"
+    mem_limit: 512m
+
+  greeks:
+    build:
+      context: .
+      dockerfile: services/greeks/Dockerfile
+    image: theta/greeks
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    working_dir: /app
+    volumes:
+      - ./services/greeks:/app
+      - ./tools/options-math:/opt/options-math:ro
+    environment:
+      OPTIONS_MATH_DIR: /opt/options-math
+    networks: [theta]
+    cpus: "1"
+    mem_limit: 512m
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 192mb --maxmemory-policy noeviction
+    volumes:
+      - theta-redis:/data
+    networks: [theta]
+    cpus: "0.5"
+    mem_limit: 256m
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-theta}
+      MYSQL_USER: ${DB_USERNAME:-theta}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-theta}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-theta-root}
+    volumes:
+      - theta-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${DB_ROOT_PASSWORD:-theta-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [theta]
+    cpus: "1"
+    mem_limit: 1g
+
+networks:
+  theta:
+    driver: bridge
+
+volumes:
+  theta-mysql:
+  theta-redis:

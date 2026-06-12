@@ -2,3 +2,30 @@
 .env.*
 !.env.example
 
+
+# Laravel skeleton ignores (merged from laravel/laravel; .env rules above stay authoritative)
+/.phpunit.cache
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+.phpactor.json
+auth.json
+homestead.json
+homestead.yaml
+npm-debug.log
+yarn-error.log
+/.fleet
+/.idea
+/.nova
+/.vscode
+/.zed
+
+# theta harness runtime artifacts
+/storage/harness
+/.phpunit.result.cache
+.venv/
+__pycache__/

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# theta post-receive deploy hook.
+#
+# Boundary: this hook touches the theta bare repo, the theta worktree
+# (/srv/theta), theta's MySQL, and compose project `theta` ONLY. It must
+# never invoke the edge-bot/perp compose project, restart Kalshi/perp
+# services, or run migrations against edge-bot/perp databases.
+#
+# Install on the box as: /home/edge/theta.git/hooks/post-receive (chmod +x)
+set -euo pipefail
+
+GIT_DIR_PATH="/home/edge/theta.git"
+WORK_TREE="/srv/theta"
+COMPOSE="docker compose -p theta -f ${WORK_TREE}/docker-compose.yml"
+
+deployed=0
+
+while read -r _oldrev _newrev ref; do
+    if [[ "${ref}" != "refs/heads/main" ]]; then
+        echo "theta deploy: ignoring ${ref} (only main deploys)"
+        continue
+    fi
+    deployed=1
+
+    echo "theta deploy: checkout main -> ${WORK_TREE}"
+    git --work-tree="${WORK_TREE}" --git-dir="${GIT_DIR_PATH}" checkout -f main
+
+    echo "theta deploy: build theta images"
+    ${COMPOSE} build
+
+    echo "theta deploy: composer install (inside theta app container)"
+    ${COMPOSE} run --rm --no-deps app composer install --no-dev --optimize-autoloader --no-interaction
+
+    echo "theta deploy: theta DB migrations only"
+    ${COMPOSE} up -d mysql redis
+    ${COMPOSE} run --rm app php artisan migrate --force
+
+    echo "theta deploy: cache theta config/routes"
+    ${COMPOSE} run --rm --no-deps app php artisan config:cache
+    ${COMPOSE} run --rm --no-deps app php artisan route:cache
+
+    echo "theta deploy: up -d theta services"
+    ${COMPOSE} up -d
+
+    echo "theta deploy: boundary readback (theta project only)"
+    ${COMPOSE} ps
+done
+
+if [[ "${deployed}" -eq 1 ]]; then
+    echo "theta deploy: done — theta compose project only; edge-bot/perp untouched"
+fi
