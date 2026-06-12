@@ -31,13 +31,16 @@ while read -r _oldrev _newrev ref; do
     echo "theta deploy: composer install (inside theta app container)"
     ${COMPOSE} run --rm --no-deps app composer install --no-dev --optimize-autoloader --no-interaction
 
+    echo "theta deploy: align runtime ownership (php-fpm/horizon/scheduler run as uid 33)"
+    ${COMPOSE} run --rm --no-deps app chown -R 33:33 /var/www/html/storage /var/www/html/bootstrap/cache
+
     echo "theta deploy: theta DB migrations only"
     ${COMPOSE} up -d mysql redis
-    ${COMPOSE} run --rm app php artisan migrate --force
+    ${COMPOSE} run --rm --user 33:33 app php artisan migrate --force
 
     echo "theta deploy: cache theta config/routes"
-    ${COMPOSE} run --rm --no-deps app php artisan config:cache
-    ${COMPOSE} run --rm --no-deps app php artisan route:cache
+    ${COMPOSE} run --rm --no-deps --user 33:33 app php artisan config:cache
+    ${COMPOSE} run --rm --no-deps --user 33:33 app php artisan route:cache
 
     echo "theta deploy: up -d theta services"
     ${COMPOSE} up -d

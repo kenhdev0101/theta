@@ -37,6 +37,8 @@ services:
   horizon:
     image: theta/app
     command: php artisan horizon
+    # Same uid as the php-fpm workers so storage/ writes share one owner.
+    user: "33:33"
     working_dir: /var/www/html
     restart: unless-stopped
     volumes:
@@ -55,6 +57,8 @@ services:
   scheduler:
     image: theta/app
     command: php artisan schedule:work
+    # Same uid as the php-fpm workers so storage/ writes share one owner.
+    user: "33:33"
     working_dir: /var/www/html
     restart: unless-stopped
     volumes:
