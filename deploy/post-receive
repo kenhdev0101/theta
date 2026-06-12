@@ -31,11 +31,18 @@ while read -r _oldrev _newrev ref; do
     echo "theta deploy: composer install (inside theta app container)"
     ${COMPOSE} run --rm --no-deps app composer install --no-dev --optimize-autoloader --no-interaction
 
-    echo "theta deploy: align runtime ownership (php-fpm/horizon/scheduler run as uid 33)"
-    ${COMPOSE} run --rm --no-deps app sh -c '
-        chown -R 33:33 /var/www/html/storage /var/www/html/bootstrap/cache \
-        && chgrp 33 /var/www/html/.env \
-        && chmod 640 /var/www/html/.env'
+    # Runtime processes (php-fpm/horizon/scheduler) run as uid 33; git runs
+    # as the worktree owner. Owner keeps every file (so checkout can always
+    # replace tracked stubs); uid 33 writes through group permission on
+    # setgid dirs. Re-applied every deploy to absorb files created since.
+    echo "theta deploy: align runtime ownership (owner keeps files, group 33 writes)"
+    WORK_UID="$(stat -c %u "${WORK_TREE}")"
+    ${COMPOSE} run --rm --no-deps app sh -c "\
+        chown -R ${WORK_UID}:33 /var/www/html/storage /var/www/html/bootstrap/cache \
+        && chmod -R g+rwX /var/www/html/storage /var/www/html/bootstrap/cache \
+        && find /var/www/html/storage /var/www/html/bootstrap/cache -type d -exec chmod g+s {} + \
+        && chown ${WORK_UID}:33 /var/www/html/.env \
+        && chmod 640 /var/www/html/.env"
 
     echo "theta deploy: theta DB migrations only"
     ${COMPOSE} up -d mysql redis
