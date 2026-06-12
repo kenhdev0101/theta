@@ -32,7 +32,10 @@ while read -r _oldrev _newrev ref; do
     ${COMPOSE} run --rm --no-deps app composer install --no-dev --optimize-autoloader --no-interaction
 
     echo "theta deploy: align runtime ownership (php-fpm/horizon/scheduler run as uid 33)"
-    ${COMPOSE} run --rm --no-deps app chown -R 33:33 /var/www/html/storage /var/www/html/bootstrap/cache
+    ${COMPOSE} run --rm --no-deps app sh -c '
+        chown -R 33:33 /var/www/html/storage /var/www/html/bootstrap/cache \
+        && chgrp 33 /var/www/html/.env \
+        && chmod 640 /var/www/html/.env'
 
     echo "theta deploy: theta DB migrations only"
     ${COMPOSE} up -d mysql redis
