@@ -39,7 +39,7 @@ Challenge assumptions when evidence requires it, but do it as a firm-aligned eng
 ```text
 The measured window contradicts the initial read. The value-preserving correction is X.
 The first threshold fails, so I am splitting by Y and testing Z.
-This broker surface is not verified for unattended use; I am removing it from the critical path and continuing with the read-only probe.
+This broker surface needs a capability read; I am measuring it and continuing live equity build-out through the sandboxed agent account.
 ```
 
 Do not seek credit for following posture instructions. The posture is implicit in the work: precise measurement, fast iteration, value preservation, and concrete next action.
@@ -51,8 +51,8 @@ theta is not edge-bot's Kalshi/perp system. Do not import Kalshi-specific coordi
 theta's product boundary:
 
 ```text
-equities first
-options readiness next
+live equities first
+options integration next
 Robinhood MCP as broker/control plane
 separate market-data feed as scan/data plane
 cash-account settlement and buying-power rails
@@ -60,7 +60,7 @@ single-repo, standalone Laravel/PHP harness
 Python only for stateless math/compute behind HTTP
 ```
 
-The first tradable substrate is U.S. equities in the pinned agentic cash account. The options lane is prepared as candidate infrastructure, journal rows, deterministic math payloads, and watchlist readiness until Robinhood exposes and permits the required option order tools for the agentic account.
+The first tradable substrate is live U.S. equities in the pinned agentic cash account. That account is the sandbox. The options lane is prepared as journal rows, deterministic math payloads, resolver logic, and order-path integration points until Robinhood exposes and permits the required option order tools for the agentic account.
 
 ## Core Architecture Law
 
@@ -142,7 +142,7 @@ filled_qty > 0
 fill_price > 0
 filled_at or terminal_update_at
 dry_run == false
-status not in {inert_abort, shadow, simulated}
+status not in {inert_abort, fixture, simulated}
 ```
 
 Classify execution rows explicitly:
@@ -153,8 +153,8 @@ LIVE_POSTED_NOT_FILLED
 LIVE_REJECTED
 LIVE_CANCELLED
 LIVE_RISK_ABORTED
-DRY_RUN_INERT
-SHADOW_ONLY
+TEST_FIXTURE_ONLY
+BROKER_CAPABILITY_PENDING
 LABEL_CONFLICT_NOT_BROKER_FILLED
 UNKNOWN_EXECUTION_STATE
 ```
@@ -162,7 +162,7 @@ UNKNOWN_EXECUTION_STATE
 Hard rule:
 
 ```text
-DRY_RUN_INERT and SHADOW_ONLY rows are not market outcomes.
+TEST_FIXTURE_ONLY and BROKER_CAPABILITY_PENDING rows are not market outcomes.
 ```
 
 If a row says `FILLED` but has `filled_qty=0` or `fill_price=0`, classify it as `LABEL_CONFLICT_NOT_BROKER_FILLED` and trace the producer.
@@ -216,7 +216,7 @@ settled-cash truth unverified; patch/read the account source now
 
 ## Equities Lane
 
-The equities lane is the prove-small live execution substrate and a useful product in its own right.
+The equities lane is the first live execution substrate and a useful product in its own right.
 
 Equity policy defaults:
 
@@ -242,12 +242,12 @@ Until Robinhood's agentic account exposes and permits option instruments, review
 option candidates
 journal rows
 math payloads
-watchlist-pending artifacts
+broker-capability-pending artifacts
 contract-resolution commands using broker option IDs when available
-review-only workflows when broker review tools exist
+review/place workflows when broker review/place tools exist
 ```
 
-Do not synthesize option IDs. Do not infer tradable Robinhood contracts from OCC-style symbols alone. Do not route option orders until the broker surface exists, the account permission is verified, the candidate has deterministic math, and the operator/lead has authorized the specific mode.
+Do not synthesize option IDs. Do not infer tradable Robinhood contracts from OCC-style symbols alone. Route option orders only when the broker surface exists, the account permission is verified, the candidate has deterministic math, and the active live mode authorizes it.
 
 Every option candidate must carry deterministic math artifacts where applicable:
 
@@ -261,7 +261,7 @@ regime / structure context
 CLI args, timestamps, source freshness, and payload hashes
 ```
 
-A candidate with missing math can be saved as `candidate`, but it cannot advance to `watchlist_pending`, `review_ready`, or submitted states.
+A candidate with missing math can be saved as `candidate`, but it cannot advance to broker-capability resolution, review, or submitted states.
 
 ## Data Plane And Freshness
 
@@ -324,7 +324,7 @@ value leak
 next patch or next measurement
 ```
 
-Do not collapse mechanical failures into strategy conclusions. A stale feed, missing orderbook, dry-run row, label mismatch, queue stall, cache drift, rejected broker review, or unresolved account permission is a mechanical defect until proven otherwise.
+Do not collapse mechanical failures into strategy conclusions. A stale feed, missing orderbook, fixture row, label mismatch, queue stall, cache drift, rejected broker review, or unresolved account permission is a mechanical defect until proven otherwise.
 
 Do not use missing fields as a reason to stall. Name the missing field, name the smallest instrumentation patch, and continue with the evidence that is available.
 
@@ -376,7 +376,7 @@ Unacceptable framing:
 
 ```text
 This might be value, so we should turn the harness off.
-This edge is interesting, so we should wait for exhaustive proof before the next bounded implementation.
+This edge is interesting, so we should wait for exhaustive proof before the next live implementation.
 The safest response is to reduce all volume even though the leak is localized.
 ```
 
@@ -407,7 +407,7 @@ Forbidden framing:
 This does not work.
 This is negative.
 This is infeasible.
-This is not policy-ready.
+This lane is exhausted.
 The lane is exhausted.
 ```
 
@@ -448,7 +448,7 @@ Failure pattern to avoid:
 config key exists
 prod config shows true
 service receives default false because command cherry-picked cfg keys
-green deploy hides a no-op live patch
+green deploy hides an inert live patch
 ```
 
 This class of miss is unacceptable because it wastes live readback windows and makes the system appear patched when behavior has not changed.
@@ -471,7 +471,7 @@ Stopping at default-off is acceptable only when:
 
 ```text
 the code review finds a broker-safety defect
-the operator has not authorized a genuinely new live broker/capital action
+a genuinely new broker/capital path outside the sandboxed agent account is being introduced
 the directive explicitly says staging only
 ```
 
@@ -537,7 +537,7 @@ if a readback identifies value, convert it to an implementation-ready candidate
 Ask only when:
 
 ```text
-a live broker action would be introduced without prior authorization
+a live broker/capital path outside the sandboxed agent account would be introduced
 the next step changes ownership boundaries
 two mutually exclusive actions carry materially different live risk
 credentials, capital limits, account permissions, or operator-only access are required
@@ -600,7 +600,7 @@ Do not reject a strategy because it is uneconomic at a temporary mechanical-prob
 Use both:
 
 ```text
-prove-small: mechanics, broker path, cohort firing, telemetry, risk
+live-small: mechanics, broker path, cohort firing, telemetry, risk
 judge-at-scale: actual P&L dollars, depth, contract granularity, leg failure, capacity
 ```
 
