@@ -38,6 +38,18 @@ class RobinhoodMcpClient
         );
     }
 
+    /** Broker capability read — the advertised tool surface (options-lane activation signal). */
+    public function listTools(): array
+    {
+        return $this->transport->listTools();
+    }
+
+    /** Broker-truth session clock. */
+    public function getMarketHours(): array
+    {
+        return $this->transport->readResource('trading://market-hours');
+    }
+
     // ── Account / portfolio truth ────────────────────────────────────────
 
     /** Buying power and cash truth come from get_portfolio, never get_accounts. */
@@ -73,16 +85,20 @@ class RobinhoodMcpClient
         ]);
     }
 
-    public function getEquityTradability(string $symbol): array
+    /** @param  string|list<string>  $symbols  max 10 per broker schema */
+    public function getEquityTradability(string|array $symbols): array
     {
+        $symbols = array_map('strtoupper', (array) $symbols);
+
         return $this->call('get_equity_tradability', [
-            'symbol' => strtoupper($symbol),
+            'account_number' => $this->agenticAccount,
+            'symbols' => $symbols,
         ]);
     }
 
-    public function searchStocks(string $query): array
+    public function search(string $query): array
     {
-        return $this->call('search_stocks', ['query' => $query]);
+        return $this->call('search', ['query' => $query]);
     }
 
     // ── Order path ───────────────────────────────────────────────────────

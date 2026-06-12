@@ -136,19 +136,38 @@ final class EquityExecutor
         ];
     }
 
+    /**
+     * Broker wire format (live-measured schema): field is `type`, numeric
+     * values are strings, additionalProperties=false.
+     */
     public function orderPayload(OrderIntent $intent): array
     {
         return array_filter([
             'symbol' => strtoupper($intent->symbol),
             'side' => $intent->side,
-            'order_type' => $intent->orderType,
+            'type' => $intent->orderType,
             'time_in_force' => $intent->timeInForce,
             'market_hours' => $intent->marketHours,
-            'quantity' => $intent->quantity,
-            'dollar_amount' => $intent->dollarAmount,
-            'limit_price' => $intent->limitPrice,
-            'stop_price' => $intent->stopPrice,
+            'quantity' => $this->decimalString($intent->quantity, 6),
+            'dollar_amount' => $this->decimalString($intent->dollarAmount, 2, trim: false),
+            'limit_price' => $this->decimalString($intent->limitPrice, 4),
+            'stop_price' => $this->decimalString($intent->stopPrice, 4),
         ], fn ($v) => $v !== null);
+    }
+
+    private function decimalString(?float $value, int $precision, bool $trim = true): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $formatted = number_format($value, $precision, '.', '');
+
+        if ($trim && str_contains($formatted, '.')) {
+            $formatted = rtrim(rtrim($formatted, '0'), '.');
+        }
+
+        return $formatted;
     }
 
     private function safeReview(OrderIntent $intent): array

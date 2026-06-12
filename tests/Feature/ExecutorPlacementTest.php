@@ -30,6 +30,9 @@ class ExecutorPlacementTest extends TestCase
     /** @var list<string> */
     private array $placedRefIds = [];
 
+    /** @var list<array> */
+    private array $placedArguments = [];
+
     private function fakeMcp(): void
     {
         Http::fake(function (Request $request) {
@@ -55,6 +58,7 @@ class ExecutorPlacementTest extends TestCase
                 if ($tool === 'place_equity_order') {
                     $refId = (string) ($arguments['ref_id'] ?? '');
                     $this->placedRefIds[] = $refId;
+                    $this->placedArguments[] = $arguments;
 
                     Assert::assertTrue(
                         HarnessOrderRef::query()->where('client_ref_id', $refId)->exists(),
@@ -121,7 +125,7 @@ class ExecutorPlacementTest extends TestCase
     {
         $this->fakeMcp();
 
-        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'limit', dollarAmount: 5.0, source: 'fixture-test');
+        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'market', dollarAmount: 5.0, source: 'fixture-test');
         $result = $this->executor()->execute($intent, $this->greenContext());
 
         $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);
@@ -136,13 +140,21 @@ class ExecutorPlacementTest extends TestCase
         $this->assertSame('submitted', $journal->status);
         $this->assertSame($ref->client_ref_id, $journal->client_ref_id);
         $this->assertFalse((bool) ($journal->broker_payload['dry_run'] ?? true));
+
+        // Wire format pinned to the live-measured broker schema.
+        $wire = $this->placedArguments[0];
+        $this->assertSame('market', $wire['type']);
+        $this->assertSame('5.00', $wire['dollar_amount']);
+        $this->assertArrayNotHasKey('order_type', $wire);
+        $this->assertArrayNotHasKey('quantity', $wire);
+        $this->assertSame(config('harness.agentic_account'), $wire['account_number']);
     }
 
     public function test_rerun_of_placed_intent_is_blocked_not_double_placed(): void
     {
         $this->fakeMcp();
 
-        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'limit', dollarAmount: 5.0, source: 'fixture-test');
+        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'market', dollarAmount: 5.0, source: 'fixture-test');
         $executor = $this->executor();
 
         $first = $executor->execute($intent, $this->greenContext());
@@ -159,7 +171,7 @@ class ExecutorPlacementTest extends TestCase
     {
         $this->fakeMcp();
 
-        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'limit', dollarAmount: 5.0, source: 'fixture-test');
+        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'market', dollarAmount: 5.0, source: 'fixture-test');
 
         $store = new OrderRefStore;
         $store->markFailed($store->reserve($intent), 'transport timeout mid-place');
@@ -176,7 +188,7 @@ class ExecutorPlacementTest extends TestCase
     {
         $this->fakeMcp();
 
-        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'limit', dollarAmount: 5.0, source: 'fixture-test');
+        $intent = new OrderIntent(symbol: 'XYZ', side: 'buy', orderType: 'market', dollarAmount: 5.0, source: 'fixture-test');
         $context = array_merge($this->greenContext(), ['settled_cash' => null]);
 
         $result = $this->executor()->execute($intent, $context);

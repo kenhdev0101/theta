@@ -14,6 +14,7 @@ use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
+use App\Robinhood\Rails\SessionClock;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Console\Command;
 
@@ -71,10 +72,13 @@ class LiveEquityProbeCommand extends Command
             return self::FAILURE;
         }
 
+        // Broker contract (live-measured): dollar_amount is only valid with
+        // type=market; the deterministic debit bound is the dollar amount
+        // itself. Share orders use a limit for price control.
         $intent = new OrderIntent(
             symbol: $symbol,
             side: $side,
-            orderType: $limitPrice !== null ? 'limit' : ($cfg['equity']['default_order_type'] ?? 'limit'),
+            orderType: $dollars !== null ? 'market' : 'limit',
             quantity: $quantity,
             dollarAmount: $dollars,
             limitPrice: $limitPrice,
@@ -134,7 +138,7 @@ class LiveEquityProbeCommand extends Command
         $portfolio = $client->getPortfolio();
         $openOrders = PortfolioReader::listFrom($client->getEquityOrders());
         $positions = PortfolioReader::listFrom($client->getEquityPositions());
-        $tradability = $client->getEquityTradability($symbol);
+        $tradability = $this->tradabilityVerdict($client->getEquityTradability($symbol));
 
         $today = now()->toDateString();
         $journalToday = RobinhoodTradeJournal::query()
@@ -156,19 +160,42 @@ class LiveEquityProbeCommand extends Command
         }
 
         $cashEstimate = (new SettledCashEstimator)->fromBrokerTruth($portfolio, $openOrders);
+        $session = (new SessionClock)->context();
 
         return [
             'settled_cash' => $cashEstimate['settled_cash'],
             'settled_cash_assumptions' => $cashEstimate['assumptions'],
             'unsettled_sell_proceeds' => $cashEstimate['unsettled_sell_proceeds'],
             'buying_power' => PortfolioReader::buyingPower($portfolio),
+            'session_context' => $session,
             'spent_today_debit' => $spentToday,
             'symbol_open_debit' => $symbolOpenDebit,
             'open_orders' => $openOrders,
             'open_positions' => $positions,
-            'session_open' => $tradability['session_open'] ?? $tradability['market_open'] ?? null,
-            'tradability' => $tradability['tradability'] ?? (($tradability['tradable'] ?? null) === true ? 'tradable' : null),
+            'session_open' => $session['session_open'],
+            'tradability' => $tradability,
             'portfolio' => $portfolio,
         ];
+    }
+
+    /**
+     * Deterministic verdict over the live tradability shape:
+     * data.results[].{tradeable, state, fractional_tradability}. Dollar
+     * probes are fractional, so the fractional flag must also be tradable.
+     * Null = unverified (gate blocks); never guessed.
+     */
+    private function tradabilityVerdict(array $payload): ?string
+    {
+        $results = PortfolioReader::listFrom($payload, ['results']);
+        $row = $results[0] ?? null;
+        if (! is_array($row)) {
+            return null;
+        }
+
+        $tradable = ($row['tradeable'] ?? null) === true
+            && ($row['state'] ?? null) === 'active'
+            && ($row['fractional_tradability'] ?? null) === 'tradable';
+
+        return $tradable ? 'tradable' : 'untradable';
     }
 }

@@ -68,6 +68,52 @@ class McpTransport
         return $result;
     }
 
+    /**
+     * Broker capability read: the advertised tool surface with input
+     * schemas. The options lane gates on exactly this (option tools
+     * appearing here is the activation signal).
+     *
+     * @return list<array{name: string, description?: string, inputSchema?: array}>
+     */
+    public function listTools(): array
+    {
+        $this->initializeIfNeeded();
+
+        $tools = [];
+        $cursor = null;
+
+        do {
+            $result = $this->rpc('tools/list', $cursor === null ? [] : ['cursor' => $cursor]);
+            foreach ((array) ($result['tools'] ?? []) as $tool) {
+                $tools[] = $tool;
+            }
+            $cursor = $result['nextCursor'] ?? null;
+        } while (is_string($cursor) && $cursor !== '');
+
+        return $tools;
+    }
+
+    /**
+     * Read an MCP resource (e.g. trading://market-hours — the broker-truth
+     * session clock). Returns decoded JSON when the resource is JSON text.
+     */
+    public function readResource(string $uri): array
+    {
+        $this->initializeIfNeeded();
+
+        $result = $this->rpc('resources/read', ['uri' => $uri]);
+
+        foreach ((array) ($result['contents'] ?? []) as $content) {
+            if (isset($content['text'])) {
+                $decoded = json_decode((string) $content['text'], true);
+
+                return is_array($decoded) ? $decoded : ['text' => $content['text']];
+            }
+        }
+
+        return $result;
+    }
+
     private function initializeIfNeeded(): void
     {
         if ($this->initialized) {
@@ -99,7 +145,9 @@ class McpTransport
             'jsonrpc' => '2.0',
             'id' => ++$this->requestId,
             'method' => $method,
-            'params' => $params,
+            // Empty params must encode as {} (object), not [] — Go-based
+            // MCP servers reject the array form.
+            'params' => $params === [] ? new \stdClass : $params,
         ];
 
         $response = $this->send($token, $payload);
