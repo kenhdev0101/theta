@@ -246,6 +246,31 @@ confirm theta is not attached to the perp network
 
 OAuth token handling is the security-sensitive piece: store encrypted (Laravel `Crypt`), load into the MCP client at boot, and tie its refresh to the §13 #1 probe outcome before any unattended run.
 
+Implemented OAuth bootstrap commands:
+
+```text
+theta:rh-oauth-init
+theta:rh-oauth-listen
+theta:rh-oauth-complete
+theta:rh-oauth-status
+```
+
+The proven Robinhood MCP OAuth path is protected-resource discovery plus PKCE:
+
+```text
+endpoint: https://agent.robinhood.com/mcp/trading
+resource metadata: WWW-Authenticate resource_metadata
+authorization metadata: /.well-known/oauth-authorization-server/mcp/trading
+authorization endpoint: https://robinhood.com/oauth
+scope: internal
+redirect: http://127.0.0.1:8787/callback
+store: storage/harness/oauth_token.enc
+```
+
+The local grant completed on 2026-06-12, includes a refresh token, and `theta:broker-readback` succeeded through theta's own MCP client. Do not try to copy Codex/Claude connector credentials; their local MCP settings contain the server URL but not a portable Robinhood bearer token.
+
+Hetzner deploy handling: `storage/harness/oauth_token.enc` is encrypted with Laravel `APP_KEY`. To avoid repeating desktop OAuth, keep theta's `APP_KEY` consistent on the box and copy the encrypted grant to `/srv/theta/storage/harness/oauth_token.enc` with `0600` permissions. If `APP_KEY` differs, re-store the grant through `OAuthTokenStore` under the box key or rerun `theta:rh-oauth-init` / `theta:rh-oauth-listen`.
+
 ## 9. Operating context — its own CLAUDE.md
 
 The new repo gets a **scoped** `CLAUDE.md`, seeded from the architecture doc's laws — **not** the perp war-room standard (combination ledger, ARM_NOW queues, agent-ID coordination don't apply to a solo unattended equity/options harness). Carry over only the universally-true invariants:

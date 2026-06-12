@@ -203,6 +203,36 @@ That is the **one-time human authorization** (open the agentic account, grant th
 
 The always-on measurement is **whether the access token re-mints headlessly from a refresh token, and the TTL of each.** Standard OAuth says refresh tokens exist precisely for unattended re-mint, but a financial agentic surface may scope it tighter — so theta measures rather than assumes. This is §13 task #1: capture the token grant (access TTL / refresh TTL / scope), then run a controlled expiry probe so the live harness can refresh cleanly. The capital firewall (agent can read all accounts, trade only the `agentic_allowed` cash account) and auto-mode (place without per-trade confirmation) are both already confirmed server-side, so this auth-lifecycle probe is an always-on hardening task, not a reason to avoid live equity execution.
 
+**2026-06-12 implementation readback:** theta now owns its own Robinhood MCP OAuth bootstrap. The flow is not a copied Codex/Claude connector credential. Codex and Claude can invoke their configured connector because their hosts hold connector-scoped credentials; those credentials were not visible as a portable Robinhood bearer token in local settings. theta therefore became a first-class MCP OAuth client.
+
+Proven mechanics:
+
+```text
+MCP endpoint: https://agent.robinhood.com/mcp/trading
+unauthenticated initialize -> 401 WWW-Authenticate
+WWW-Authenticate resource_metadata -> https://agent.robinhood.com/.well-known/oauth-protected-resource/mcp/trading
+authorization server metadata -> https://agent.robinhood.com/.well-known/oauth-authorization-server/mcp/trading
+authorization endpoint -> https://robinhood.com/oauth
+registration endpoint -> https://agent.robinhood.com/oauth/trading/register
+token endpoint -> https://api.robinhood.com/oauth2/token/
+scope -> internal
+PKCE -> S256
+redirect -> http://127.0.0.1:8787/callback
+```
+
+Operator commands:
+
+```text
+docker compose -p theta run --rm app php artisan theta:rh-oauth-init
+docker compose -p theta run --rm --publish 127.0.0.1:8787:8787 app php artisan theta:rh-oauth-listen
+docker compose -p theta run --rm app php artisan theta:rh-oauth-status
+docker compose -p theta run --rm app php artisan theta:broker-readback
+```
+
+The local grant was stored encrypted at `storage/harness/oauth_token.enc`, contained a refresh token, and reported access expiry `2026-06-19T21:04:43Z`. The first theta-owned `theta:broker-readback` succeeded against pinned account `872449178`. Remaining work is refresh implementation and expiry characterization, not initial OAuth discovery.
+
+**Hetzner credential rule:** the encrypted grant uses Laravel `Crypt`, so it is bound to theta's `APP_KEY`. To avoid repeating desktop OAuth on the box, deploy with the same theta `APP_KEY` and copy `storage/harness/oauth_token.enc` to `/srv/theta/storage/harness/oauth_token.enc` with `0600` permissions. If the box uses a different `APP_KEY`, do not copy the encrypted blob as-is; re-store the grant through `OAuthTokenStore` under the box key or rerun the desktop grant.
+
 ## 10. Observability & dashboard — independent of broker
 
 Broker stays truth for reconciliation, but the operator's history, rationale, and decision log live in the harness's own store and survive independent of anything Robinhood shows:

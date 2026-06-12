@@ -240,6 +240,38 @@ portfolio / buying power: get_portfolio, not get_accounts
 
 Manual operator positions are not adopted by the harness unless an explicit migration artifact says so. The harness must never infer ownership from symbol overlap alone.
 
+## Robinhood OAuth Bootstrap
+
+theta owns its Robinhood MCP OAuth grant. Do not assume Codex or Claude connector credentials are portable; those hosts can invoke Robinhood through their own connector layer, but their hidden grant is not theta's runtime credential.
+
+Proven local OAuth flow:
+
+```text
+docker compose -p theta run --rm app php artisan theta:rh-oauth-init
+docker compose -p theta run --rm --publish 127.0.0.1:8787:8787 app php artisan theta:rh-oauth-listen
+open the generated https://robinhood.com/oauth URL
+authorize the Agentic account
+docker compose -p theta run --rm app php artisan theta:rh-oauth-status
+docker compose -p theta run --rm app php artisan theta:broker-readback
+```
+
+Implementation details agents must preserve:
+
+```text
+MCP endpoint: https://agent.robinhood.com/mcp/trading
+protected-resource metadata: discovered from WWW-Authenticate resource_metadata
+authorization metadata: /.well-known/oauth-authorization-server/mcp/trading
+scope: internal
+PKCE: S256
+redirect URI: http://127.0.0.1:8787/callback
+grant store: storage/harness/oauth_token.enc via Laravel Crypt
+env fallback: HARNESS_OAUTH_TOKEN only for bootstrap/debug
+```
+
+The local grant completed on 2026-06-12 and `theta:broker-readback` succeeded against pinned account `872449178`. The stored grant has an access-token expiry of `2026-06-19T21:04:43Z` and includes a refresh token. Refresh behavior still needs implementation/expiry characterization; do not treat this as solved by hand-waving.
+
+For Hetzner, avoid repeating the desktop grant if possible. The encrypted `storage/harness/oauth_token.enc` is tied to Laravel `APP_KEY`. Either keep the same theta `APP_KEY` on the box and copy the encrypted grant with `0600` permissions, or decrypt/re-store the grant through theta's `OAuthTokenStore` under the box's `APP_KEY`. Never commit the grant or print token values.
+
 ## Capital Firewall And Settlement Discipline
 
 theta trades only the pinned Robinhood agentic account. Do not default to another account from `get_accounts`. Do not route around `agentic_allowed`. Do not use private Robinhood REST paths to bypass the MCP.

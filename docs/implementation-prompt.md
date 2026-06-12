@@ -83,6 +83,7 @@ Required first implementation pass:
    - app/Robinhood/Mcp/RobinhoodMcpClient.php
    - app/Robinhood/Mcp/McpTransport.php
    - app/Robinhood/Mcp/OAuthTokenStore.php
+   - app/Robinhood/Mcp/OAuthBootstrapClient.php
    - app/Robinhood/Rails/RailPipeline.php
    - app/Robinhood/Execution/EquityExecutor.php
    - app/Robinhood/Reconciliation/BrokerTruthReconciler.php
@@ -90,6 +91,10 @@ Required first implementation pass:
    - app/MarketData/AlpacaMarketDataClient.php
 8. Add commands:
    - theta:alpaca-smoke-test
+   - theta:rh-oauth-init
+   - theta:rh-oauth-listen
+   - theta:rh-oauth-complete
+   - theta:rh-oauth-status
    - theta:broker-readback
    - theta:live-equity-probe
    - theta:reconcile
@@ -113,6 +118,20 @@ Do not stop after proposing. Implement files, run focused tests or the closest a
 - theta main
 
 If a command fails because dependencies are missing, add the missing dependency to the Docker image or project manifests and rebuild the container. If network or permission blocks a required command, request the exact approval and continue.
+
+OAuth readback already proven on 2026-06-12:
+
+```text
+Robinhood MCP endpoint: https://agent.robinhood.com/mcp/trading
+OAuth scope: internal
+authorization endpoint: https://robinhood.com/oauth
+PKCE: S256
+local redirect/listener: http://127.0.0.1:8787/callback
+encrypted grant: storage/harness/oauth_token.enc
+broker readback: succeeded against pinned account 872449178
+```
+
+Do not ask the next agent to hunt for Codex/Claude connector tokens. Their MCP settings contain the Robinhood server URL, but not an exportable Robinhood bearer. theta owns its own OAuth grant through `theta:rh-oauth-*`.
 
 Final readback must include:
 - files changed
