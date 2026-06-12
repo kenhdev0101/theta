@@ -329,18 +329,23 @@ Limit orders control price and timing. They do not change direction. Long-only c
 
 The options lane is single-leg first: long calls and long puts, defined risk, no assignment complexity, no naked short options.
 
-Until Robinhood's agentic account exposes and permits option instruments, reviews, and placement, theta may build:
+The options permission blocker cleared on 2026-06-12: the pinned Agentic cash account (872449178) is approved at `option_level_2`, and the agentic MCP advertises the full single-leg option surface (chains, instruments, quotes, review, place, orders, positions). Options are a first-class live product.
+
+Current live scope:
 
 ```text
-option candidates
-journal rows
-math payloads
-broker-capability-pending artifacts
-contract-resolution commands using broker option IDs when available
-review/place workflows when broker review/place tools exist
+buy-to-open long calls and long puts
+sell-to-close long calls and long puts
+no spreads, covered calls, cash-secured puts, short/naked options, or multi-leg
+deterministic resolver chooses the contract; the model never does
+review probes (theta:option-review-probe) are allowed any time
+live placement only via explicit operator invocation of theta:option-live-place
+broker truth remains the source of truth
 ```
 
-Do not synthesize option IDs. Do not infer tradable Robinhood contracts from OCC-style symbols alone. Route option orders only when the broker surface exists, the account permission is verified, the candidate has deterministic math, and the active live mode authorizes it.
+The default margin account (option_level_3, agentic_allowed=false) must never be used.
+
+Do not synthesize option IDs. Do not infer tradable Robinhood contracts from OCC-style symbols alone. Route option orders only through the option rail pipeline: account pin + option_level verified, contract resolved and tradable, quote fresh, spread/caps inside bounds, review clean, ref_id persisted before placement.
 
 Every option candidate must carry deterministic math artifacts where applicable:
 

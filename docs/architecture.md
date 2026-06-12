@@ -124,14 +124,14 @@ The operator's existing two-account split *is* the firewall — no soft accounti
 
 | Account | Type | Options | Agentic | Role |
 |---|---|---|---|---|
-| `872449178` ("Agentic") | cash | not enabled (`option_level:""`) | `agentic_allowed=true` | **System owns 100%.** Pinned trading account. |
+| `872449178` ("Agentic") | cash | **`option_level_2`** (approved 2026-06-12) | `agentic_allowed=true` | **System owns 100%.** Pinned trading account. |
 | `717293732` (default) | margin | `option_level_3` | `agentic_allowed=false` | **Operator manual reserve.** Harness physically cannot reach it (server-enforced). |
 
 Consequences baked into the architecture:
 
 1. The trading account is **cash**, not margin → no leverage, no shorting, and **cash settlement**: the sizing/cadence rail must track **settled vs. unsettled cash**, not just `buying_power`, to avoid good-faith / free-riding violations. Upside: cash accounts are PDT-exempt, so intraday round-trips don't trip pattern-day-trader.
 2. **Buying power comes from `get_portfolio`**, never `get_accounts` (the schema is explicit it is unreliable there).
-3. **Options gating problem (known, account-permission, not engineerable):** the agentic account has options disabled; the L3 options account is agentic-blocked. When RH lands agentic options, this account must be upgraded via the `upgrade_options` apply flow before it can trade them. Flag now; it is a prerequisite, not a code task.
+3. ~~Options gating problem~~ **— RESOLVED 2026-06-12.** The agentic account is approved at `option_level_2` and the MCP advertises the full single-leg option order path (chains/instruments/quotes/review/place/orders/positions; verified by live `tools/list` + capability readback). Live scope is single-leg Level 2 only: BTO long calls/puts, STC to exit. The deterministic resolver chooses contracts — never the model. Review probes run freely; placement requires explicit operator invocation of `theta:option-live-place`.
 
 ## 6. Execution rails — the pre-trade pipeline
 

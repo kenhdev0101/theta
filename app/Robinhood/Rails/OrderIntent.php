@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Robinhood\Rails;
 
+use App\Robinhood\Execution\ReservableIntent;
+
 /**
  * Typed, immutable order intent — the contract between the decision layer
  * and the deterministic rail/execution layers. The decision layer may
  * narrate why this intent exists; it never computes these numbers.
  */
-final class OrderIntent
+final class OrderIntent implements ReservableIntent
 {
     public function __construct(
         public readonly string $symbol,
@@ -64,6 +66,16 @@ final class OrderIntent
             $this->limitPrice === null ? '' : rtrim(rtrim(number_format($this->limitPrice, 8, '.', ''), '0'), '.'),
             $this->source,
         ]));
+    }
+
+    public function refSymbol(): string
+    {
+        return strtoupper($this->symbol);
+    }
+
+    public function refSide(): string
+    {
+        return $this->side;
     }
 
     public function toArray(): array

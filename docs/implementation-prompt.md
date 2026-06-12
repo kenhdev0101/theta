@@ -142,3 +142,18 @@ Final readback must include:
 - confirmation that origin/main and theta/main match
 - next concrete live step
 ```
+
+## Status Addendum — 2026-06-12
+
+The bootstrap above is implemented and live. Options addendum:
+
+- Options approval blocker cleared 2026-06-12: pinned Agentic account
+  872449178 reports `option_level_2`, `agentic_allowed=true` (live
+  capability readback: OPTIONS_READY).
+- Supported first strategies: long calls / long puts (BTO), sell-to-close.
+  No multi-leg spreads. No model contract selection — the deterministic
+  resolver picks the contract.
+- Review probes (`theta:option-review-probe`) are allowed; live placement
+  waits for explicit operator invocation of `theta:option-live-place`.
+- Broker truth remains the source of truth; option fills require
+  broker_order_id + option_id + filled qty/price > 0.

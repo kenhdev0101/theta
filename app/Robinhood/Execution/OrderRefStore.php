@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Robinhood\Execution;
 
 use App\Models\HarnessOrderRef;
-use App\Robinhood\Rails\OrderIntent;
 use Illuminate\Support\Str;
 
 /**
@@ -15,7 +14,7 @@ use Illuminate\Support\Str;
  */
 final class OrderRefStore
 {
-    public function reserve(OrderIntent $intent, ?string $tradingDay = null): HarnessOrderRef
+    public function reserve(ReservableIntent $intent, ?string $tradingDay = null): HarnessOrderRef
     {
         $tradingDay ??= now()->toDateString();
 
@@ -23,12 +22,22 @@ final class OrderRefStore
             ['intent_key' => $intent->intentKey($tradingDay)],
             [
                 'client_ref_id' => (string) Str::uuid(),
-                'symbol' => strtoupper($intent->symbol),
-                'side' => $intent->side,
+                'symbol' => $intent->refSymbol(),
+                'side' => $intent->refSide(),
                 'status' => 'reserved',
                 'order_payload' => $intent->toArray(),
             ],
         );
+    }
+
+    /** Look up the existing ref for this logical intent without creating one. */
+    public function peek(ReservableIntent $intent, ?string $tradingDay = null): ?HarnessOrderRef
+    {
+        $tradingDay ??= now()->toDateString();
+
+        return HarnessOrderRef::query()
+            ->where('intent_key', $intent->intentKey($tradingDay))
+            ->first();
     }
 
     public function markPlaced(HarnessOrderRef $ref, ?string $brokerOrderId): void

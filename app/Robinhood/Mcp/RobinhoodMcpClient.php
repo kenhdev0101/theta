@@ -101,6 +101,101 @@ class RobinhoodMcpClient
         return $this->call('search', ['query' => $query]);
     }
 
+    // ── Options surface (single-leg Level 2; live-measured schemas) ──────
+
+    public function getOptionChains(string $underlyingSymbol): array
+    {
+        return $this->call('get_option_chains', [
+            'underlying_symbol' => strtoupper($underlyingSymbol),
+        ]);
+    }
+
+    /**
+     * @param  array  $filters  chain_id|chain_symbol|expiration_dates|strike_price|type|state|tradability|ids|cursor
+     */
+    public function getOptionInstruments(array $filters): array
+    {
+        $allowed = ['chain_id', 'chain_symbol', 'expiration_dates', 'strike_price', 'type', 'state', 'tradability', 'ids', 'cursor'];
+
+        return $this->call('get_option_instruments', array_intersect_key($filters, array_flip($allowed)));
+    }
+
+    /** @param list<string> $instrumentIds max 20 for close data per broker guide */
+    public function getOptionQuotes(array $instrumentIds): array
+    {
+        return $this->call('get_option_quotes', [
+            'instrument_ids' => array_values($instrumentIds),
+        ]);
+    }
+
+    public function getOptionPositions(bool $nonzero = true): array
+    {
+        return $this->call('get_option_positions', [
+            'account_number' => $this->agenticAccount,
+            'nonzero' => $nonzero,
+        ]);
+    }
+
+    /** Reconciliation key: harness option orders are placed_agent='agentic'. */
+    public function getOptionOrders(array $filters = []): array
+    {
+        return $this->call('get_option_orders', array_merge([
+            'account_number' => $this->agenticAccount,
+            'placed_agent' => 'agentic',
+        ], $filters));
+    }
+
+    public function reviewOptionOrder(array $order): array
+    {
+        return $this->call('review_option_order', array_merge($order, [
+            'account_number' => $this->agenticAccount,
+        ]));
+    }
+
+    /**
+     * @param  string  $refId  harness-persisted idempotency key; durable BEFORE
+     *                         this method is invoked
+     */
+    public function placeOptionOrder(array $order, string $refId): array
+    {
+        if ($refId === '') {
+            throw new InvalidArgumentException('placeOptionOrder requires a persisted ref_id');
+        }
+
+        return $this->call('place_option_order', array_merge($order, [
+            'account_number' => $this->agenticAccount,
+            'ref_id' => $refId,
+        ]));
+    }
+
+    /**
+     * Capability truth for the PINNED account only. get_accounts is called
+     * as the only broker surface exposing option_level/agentic_allowed, but
+     * every other account row is discarded inside this method — nothing but
+     * the pin ever crosses this boundary, and the pin itself always comes
+     * from config, never from the list.
+     */
+    public function getAccountCapability(): ?array
+    {
+        $payload = $this->call('get_accounts', []);
+
+        foreach (PortfolioReader::listFrom($payload, ['accounts', 'results']) as $account) {
+            if ((string) ($account['account_number'] ?? '') !== $this->agenticAccount) {
+                continue;
+            }
+
+            return [
+                'account_number' => $this->agenticAccount,
+                'type' => $account['type'] ?? $account['brokerage_account_type'] ?? null,
+                'option_level' => $account['option_level'] ?? null,
+                'agentic_allowed' => $account['agentic_allowed'] ?? null,
+                'nickname' => $account['nickname'] ?? null,
+            ];
+        }
+
+        return null;
+    }
+
     // ── Order path ───────────────────────────────────────────────────────
 
     public function reviewEquityOrder(array $order): array

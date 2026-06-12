@@ -7,6 +7,10 @@ namespace Tests\Feature;
 use App\Console\Commands\AlpacaSmokeTestCommand;
 use App\Console\Commands\BrokerReadbackCommand;
 use App\Console\Commands\LiveEquityProbeCommand;
+use App\Console\Commands\OptionLivePlaceCommand;
+use App\Console\Commands\OptionReconcileCommand;
+use App\Console\Commands\OptionReviewProbeCommand;
+use App\Console\Commands\OptionsCapabilityReadbackCommand;
 use App\Console\Commands\ReconcileCommand;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
@@ -24,6 +28,10 @@ class ConfigPropagationTest extends TestCase
         BrokerReadbackCommand::class,
         LiveEquityProbeCommand::class,
         ReconcileCommand::class,
+        OptionsCapabilityReadbackCommand::class,
+        OptionReviewProbeCommand::class,
+        OptionReconcileCommand::class,
+        OptionLivePlaceCommand::class,
     ];
 
     public function test_every_command_propagates_the_full_harness_block(): void
@@ -63,7 +71,24 @@ class ConfigPropagationTest extends TestCase
             foreach (['key_id', 'secret_key', 'feed', 'base_url', 'stream_url', 'staleness_seconds'] as $key) {
                 $this->assertArrayHasKey($key, $cfg['alpaca'], "$class alpaca block missing '$key'");
             }
+
+            foreach ([
+                'enabled', 'max_spread_bps', 'max_contract_ask', 'per_play_max_debit',
+                'per_day_max_debit', 'per_underlying_max_debit', 'max_open_positions',
+                'min_quote_fresh_seconds', 'required_tools',
+            ] as $key) {
+                $this->assertArrayHasKey($key, $cfg['options'] ?? [], "$class options block missing '$key'");
+            }
         }
+    }
+
+    public function test_live_options_cap_values_reach_the_option_pipeline_through_command_cfg(): void
+    {
+        config()->set('harness.options.per_play_max_debit', 10.0);
+
+        $cfg = (new OptionLivePlaceCommand)->assembleConfig();
+
+        $this->assertSame(10.0, $cfg['options']['per_play_max_debit'], 'live options cap must reach the command cfg assembly');
     }
 
     public function test_live_kill_switch_value_reaches_the_rail_pipeline_through_command_cfg(): void

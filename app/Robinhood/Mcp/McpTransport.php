@@ -46,7 +46,8 @@ class McpTransport
 
         $result = $this->rpc('tools/call', [
             'name' => $name,
-            'arguments' => $arguments,
+            // Empty arguments must encode as {} — Go servers reject [].
+            'arguments' => $arguments === [] ? new \stdClass : $arguments,
         ]);
 
         if (($result['isError'] ?? false) === true) {

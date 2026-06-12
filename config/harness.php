@@ -53,6 +53,34 @@ return [
         'timeout_seconds' => (int) env('HARNESS_GREEKS_TIMEOUT', 130),
     ],
 
+    // Options lane — single-leg Level 2 only (long calls/puts BTO, STC to
+    // exit). Account 872449178 cleared option_level_2 on 2026-06-12.
+    // Spreads/short options stay out until a later explicit pass.
+    'options' => [
+        'enabled' => (bool) env('HARNESS_OPTIONS_ENABLED', true),
+        'default_order_type' => 'limit',
+        'default_time_in_force' => 'gfd',
+        'default_market_hours' => 'regular_hours',
+        // Spread cap in bps of mid (1500 = 15%).
+        'max_spread_bps' => (float) env('HARNESS_OPTIONS_MAX_SPREAD_BPS', 1500),
+        'max_contract_ask' => (float) env('HARNESS_OPTIONS_MAX_CONTRACT_ASK', 5.00),
+        'per_play_max_debit' => (float) env('HARNESS_OPTIONS_PER_PLAY_MAX_DEBIT', 75.00),
+        'per_day_max_debit' => (float) env('HARNESS_OPTIONS_PER_DAY_MAX_DEBIT', 250.00),
+        'per_underlying_max_debit' => (float) env('HARNESS_OPTIONS_PER_UNDERLYING_MAX_DEBIT', 100.00),
+        'max_open_positions' => (int) env('HARNESS_OPTIONS_MAX_OPEN_POSITIONS', 4),
+        'min_quote_fresh_seconds' => (int) env('HARNESS_OPTIONS_QUOTE_FRESH_SECONDS', 10),
+        'contract_multiplier' => 100.0,
+        'required_tools' => [
+            'get_option_chains',
+            'get_option_instruments',
+            'get_option_quotes',
+            'review_option_order',
+            'place_option_order',
+            'get_option_orders',
+            'get_option_positions',
+        ],
+    ],
+
     // Data plane — Alpaca SIP feed (scanner substrate; RH MCP is not the firehose).
     'alpaca' => [
         'key_id' => env('ALPACA_DATA_KEY_ID'),

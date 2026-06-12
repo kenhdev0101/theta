@@ -21,6 +21,9 @@ use Illuminate\Support\Str;
  * @property string $symbol
  * @property string $status
  * @property string|null $side
+ * @property string|null $position_effect
+ * @property string|null $chain_id
+ * @property string|null $option_id
  * @property string|null $dollar_amount
  * @property string|null $quantity
  * @property string|null $limit_price
@@ -37,12 +40,14 @@ class RobinhoodTradeJournal extends Model
         'symbol',
         'underlying_symbol',
         'option_id',
+        'chain_id',
         'option_type',
         'expiration_date',
         'strike_price',
         'status',
         'intent',
         'side',
+        'position_effect',
         'order_type',
         'time_in_force',
         'market_hours',

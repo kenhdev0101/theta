@@ -1,19 +1,30 @@
 # Agentic Options Infrastructure Readiness Plan
 
-Status: ACTIVE — build-now options lane for live harness integration
+Status: ACTIVE — options surface LIVE-READY as of 2026-06-12
 Scope: Robinhood options candidates, watchlist preparation, deterministic math, and audit fields
 
 ## Current Boundary
 
-Build the options lane now as deterministic math, journal state, resolver logic,
-review handling, and order-path integration points for the live harness. The
-existing options playbook is the ingestion source: `tools/options-math/` emits
-JSON and trade files under `docs/playbook/` hold thesis/math/kill triggers.
+**The broker capability gate cleared on 2026-06-12**: the pinned Agentic cash
+account (872449178) is approved at `option_level_2`, and the agentic MCP
+advertises and answers the full single-leg option surface — verified live via
+capability readback (`theta:options-capability-readback` → OPTIONS_READY),
+chain/instrument/quote reads, and a clean broker review probe. The implemented
+spine is: `OptionContractResolver` (deterministic exact-contract selection;
+delta/moneyness hooks reserved, never model-chosen) → `OptionRailPipeline`
+(named BLOCK_* verdicts) → `OptionExecutor` (ref persisted before
+review/place) → option reconciliation against `get_option_orders` /
+`get_option_positions`.
 
-Broker writes stay gated by actual broker/account capability. `add_option_to_watchlist`
-requires contract UUIDs from `get_option_instruments`; before that resolver is
-available, the system produces complete normalized contract rows with a named
-`broker_capability_pending` state rather than pretending an order can be routed.
+Live scope is single-leg Level 2 only: buy-to-open long calls/puts and
+sell-to-close. No spreads, covered calls, cash-secured puts, short/naked
+options, or multi-leg structures. Review probes are allowed any time;
+placement happens only via explicit operator invocation of
+`theta:option-live-place`. Broker truth remains the source of truth.
+
+`add_option_to_watchlist` requires contract UUIDs from
+`get_option_instruments` (now live); legacy `broker_capability_pending` rows
+backfill through a fresh broker lookup, never through synthesized IDs.
 
 ## Candidate Schema Usage
 

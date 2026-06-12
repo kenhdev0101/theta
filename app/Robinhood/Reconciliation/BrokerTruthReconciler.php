@@ -74,6 +74,146 @@ final class BrokerTruthReconciler
         return self::UNKNOWN_EXECUTION_STATE;
     }
 
+    /**
+     * Option-order classification: same taxonomy, with the option-specific
+     * broker-truth requirement — a filled option order must also carry an
+     * option_id (single leg) or it is a label conflict, not a fill.
+     */
+    public function classifyOption(array $row): string
+    {
+        $classification = $this->classify($this->normalizeOptionRow($row));
+
+        if ($classification === self::LIVE_FILLED && $this->optionId($row) === null) {
+            return self::LABEL_CONFLICT_NOT_BROKER_FILLED;
+        }
+
+        return $classification;
+    }
+
+    /**
+     * Reconcile broker option orders against local journal option rows.
+     *
+     * @param  list<array>  $brokerOrders  rows from get_option_orders(placed_agent='agentic')
+     * @param  list<array>  $journalRows  local option journal rows
+     */
+    public function reconcileOptions(array $brokerOrders, array $journalRows): array
+    {
+        $journalByRef = [];
+        $journalByBrokerId = [];
+        foreach ($journalRows as $row) {
+            if (! empty($row['client_ref_id'])) {
+                $journalByRef[(string) $row['client_ref_id']] = $row;
+            }
+            if (! empty($row['broker_order_id'])) {
+                $journalByBrokerId[(string) $row['broker_order_id']] = $row;
+            }
+        }
+
+        $ledger = [];
+        $matched = [];
+
+        foreach ($brokerOrders as $order) {
+            $refId = (string) ($order['ref_id'] ?? $order['client_ref_id'] ?? '');
+            $brokerOrderId = (string) ($order['id'] ?? $order['order_id'] ?? '');
+
+            $journal = $journalByRef[$refId] ?? $journalByBrokerId[$brokerOrderId] ?? null;
+            if ($journal !== null && ! empty($journal['client_ref_id'])) {
+                $matched[(string) $journal['client_ref_id']] = true;
+            }
+
+            $normalized = $this->normalizeOptionRow($order);
+            $classification = $this->classifyOption($order);
+            $leg = $this->firstLeg($order);
+
+            $ledger[] = [
+                'agent_id' => 'theta-harness',
+                'source' => 'broker',
+                'asset_class' => 'option',
+                'classification' => $classification,
+                'broker_order_id' => $brokerOrderId !== '' ? $brokerOrderId : null,
+                'client_ref_id' => $refId !== '' ? $refId : null,
+                'option_id' => $this->optionId($order),
+                'symbol' => strtoupper((string) ($order['chain_symbol'] ?? $order['symbol'] ?? '')),
+                'side' => $leg['side'] ?? $order['side'] ?? null,
+                'position_effect' => $leg['position_effect'] ?? $order['position_effect'] ?? null,
+                'broker_status' => $order['state'] ?? $order['status'] ?? null,
+                'filled_qty' => $this->numeric($normalized, ['filled_quantity']),
+                'fill_price' => $this->numeric($normalized, ['average_fill_price']),
+                'journal_matched' => $journal !== null,
+                'journal_status' => $journal['status'] ?? null,
+                'is_market_outcome' => $this->isMarketOutcome($classification),
+            ];
+        }
+
+        foreach ($journalRows as $row) {
+            $refId = (string) ($row['client_ref_id'] ?? '');
+            if ($refId !== '' && isset($matched[$refId])) {
+                continue;
+            }
+
+            $localStatus = strtolower((string) ($row['status'] ?? ''));
+            if (! in_array($localStatus, ['submitted', 'open', 'partially_filled', 'filled'], true)) {
+                continue;
+            }
+
+            $ledger[] = [
+                'agent_id' => 'theta-harness',
+                'source' => 'journal_orphan',
+                'asset_class' => 'option',
+                'classification' => self::UNKNOWN_EXECUTION_STATE,
+                'broker_order_id' => $row['broker_order_id'] ?? null,
+                'client_ref_id' => $refId !== '' ? $refId : null,
+                'option_id' => $row['option_id'] ?? null,
+                'symbol' => strtoupper((string) ($row['underlying_symbol'] ?? $row['symbol'] ?? '')),
+                'side' => $row['side'] ?? null,
+                'position_effect' => $row['position_effect'] ?? null,
+                'broker_status' => null,
+                'filled_qty' => 0.0,
+                'fill_price' => 0.0,
+                'journal_matched' => false,
+                'journal_status' => $row['status'] ?? null,
+                'is_market_outcome' => false,
+            ];
+        }
+
+        return [
+            'ledger' => $ledger,
+            'summary' => $this->summarize($ledger),
+        ];
+    }
+
+    /**
+     * Map option-order payload key variants onto the generic classifier's
+     * vocabulary (option orders report premium/processed quantities).
+     */
+    private function normalizeOptionRow(array $row): array
+    {
+        $row['filled_quantity'] = $this->numeric($row, ['processed_quantity', 'filled_quantity', 'filled_qty', 'cumulative_quantity']);
+        $row['average_fill_price'] = $this->numeric($row, ['average_price', 'processed_premium_per_contract', 'average_fill_price', 'fill_price', 'premium']);
+
+        return $row;
+    }
+
+    /** Defensive single-leg extraction — a malformed broker payload yields [], never an error. */
+    private function firstLeg(array $row): array
+    {
+        $legs = $row['legs'] ?? null;
+        if (! is_array($legs)) {
+            return [];
+        }
+
+        $leg = $legs[0] ?? null;
+
+        return is_array($leg) ? $leg : [];
+    }
+
+    private function optionId(array $row): ?string
+    {
+        $optionId = $this->firstLeg($row)['option_id'] ?? $row['option_id'] ?? null;
+
+        return is_string($optionId) && $optionId !== '' ? $optionId : null;
+    }
+
     /** A row counts as a market outcome only under these classifications. */
     public function isMarketOutcome(string $classification): bool
     {
