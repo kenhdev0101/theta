@@ -33,7 +33,8 @@ class OptionIntentProducerCommand extends Command
 
     protected $signature = 'theta:option-intent-producer
         {--symbols= : Comma-separated symbols; defaults to harness.options.producer.symbols}
-        {--limit=1 : Maximum reviewed intents to create this run}';
+        {--limit=1 : Maximum reviewed intents to create this run}
+        {--dry-run : Evaluate and print the decision per symbol WITHOUT reviewing, placing, or writing intents. Read-only preview; bypasses the mode/kill/session arm gates so decisions can be inspected off-hours.}';
 
     protected $description = 'Produce fresh reviewed option intents from live data for scheduled autopilot';
 
@@ -43,8 +44,10 @@ class OptionIntentProducerCommand extends Command
         $options = (array) ($cfg['options'] ?? []);
         $producer = (array) ($options['producer'] ?? []);
         $recorder = JsonlRecorder::fromConfig($cfg);
+        // Read-only preview: evaluate and print decisions, never review/place/persist.
+        $dryRun = (bool) $this->option('dry-run');
 
-        if (($cfg['mode'] ?? 'approval') !== 'auto') {
+        if (! $dryRun && ($cfg['mode'] ?? 'approval') !== 'auto') {
             $this->warn('producer disarmed: HARNESS_MODE is not auto');
 
             return self::SUCCESS;
@@ -56,13 +59,13 @@ class OptionIntentProducerCommand extends Command
             return self::SUCCESS;
         }
 
-        if ((bool) ($cfg['kill_switch'] ?? true)) {
+        if (! $dryRun && (bool) ($cfg['kill_switch'] ?? true)) {
             $this->warn('producer disarmed: kill switch engaged');
 
             return self::SUCCESS;
         }
 
-        if (! (new SessionClock)->isRegularHoursOpen()) {
+        if (! $dryRun && ! (new SessionClock)->isRegularHoursOpen()) {
             $this->info('producer idle: regular options session closed');
 
             return self::SUCCESS;
@@ -85,6 +88,12 @@ class OptionIntentProducerCommand extends Command
         $maxCreated = max(1, (int) $this->option('limit'));
         $client = RobinhoodMcpClient::fromConfig($cfg, $recorder);
         $rails = new OptionRailPipeline;
+
+        if ($dryRun) {
+            $this->previewEntries($client, $cfg, $producer, $rails, $data, $symbols);
+
+            return self::SUCCESS;
+        }
 
         $created = 0;
         $blocked = 0;
@@ -416,6 +425,112 @@ class OptionIntentProducerCommand extends Command
         }
 
         return 'unknown';
+    }
+
+    /**
+     * Read-only decision preview: run the exact entry evaluation per symbol and
+     * print what the producer WOULD do, without reviewing, placing, or writing
+     * any journal rows. Lets the operator watch decisions — including
+     * capital-independent evaluation and capital deferral — off-hours.
+     */
+    private function previewEntries(RobinhoodMcpClient $client, array $cfg, array $producer, OptionRailPipeline $rails, AlpacaMarketDataClient $data, array $symbols): void
+    {
+        $capitalIndependent = (bool) ($producer['capital_independent_evaluation'] ?? false);
+        $money = fn ($v): string => $v === null ? 'n/a' : '$'.number_format((float) $v, 2);
+
+        $this->info(sprintf('DRY RUN — read-only decision preview (capital_independent=%s). No review, no place, no journal writes.', $capitalIndependent ? 'on' : 'off'));
+
+        try {
+            $brokerContext = OptionBrokerContext::assemble($client, $cfg);
+            $this->line(sprintf(
+                'broker truth: buying_power=%s settled_cash=%s open_positions=%d',
+                $money($brokerContext['buying_power'] ?? null),
+                $money($brokerContext['settled_cash'] ?? null),
+                is_array($brokerContext['open_option_positions'] ?? null) ? count($brokerContext['open_option_positions']) : 0,
+            ));
+        } catch (\Throwable $e) {
+            $this->warn('broker-truth read failed: '.$e->getMessage().' (continuing; capital figures unknown)');
+            $brokerContext = [];
+        }
+
+        foreach ($symbols as $symbol) {
+            try {
+                $underlying = $data->latestQuote($symbol);
+            } catch (\Throwable $e) {
+                $this->line("{$symbol}: data-plane blocker — {$e->getMessage()}");
+
+                continue;
+            }
+            if (($underlying['stale'] ?? true) === true || ! is_numeric($underlying['bid'] ?? null) || ! is_numeric($underlying['ask'] ?? null)) {
+                $this->line("{$symbol}: underlying quote stale/incomplete");
+
+                continue;
+            }
+
+            try {
+                $bars = $data->recentBars($symbol, max(3, (int) ($producer['momentum_lookback_bars'] ?? 10)), (string) ($producer['momentum_timeframe'] ?? '1Min'));
+            } catch (\Throwable $e) {
+                $this->line("{$symbol}: momentum data blocker — {$e->getMessage()}");
+
+                continue;
+            }
+
+            $momentum = $this->momentumSignal($symbol, $underlying, $bars, $producer);
+            if (($momentum['verdict'] ?? 'BLOCK') !== 'ALLOW') {
+                $this->line(sprintf('%s: no momentum — %s', $symbol, (string) ($momentum['reason'] ?? 'unknown')));
+
+                continue;
+            }
+
+            $selection = $this->selectContract($client, $cfg, $symbol, (float) $underlying['ask'], (string) ($momentum['option_type'] ?? $producer['option_type'] ?? 'call'), $brokerContext, $capitalIndependent);
+            if (($selection['contract'] ?? null) === null || ($selection['quote'] ?? null) === null) {
+                $this->line(sprintf('%s: no marketable contract — %s', $symbol, implode('; ', (array) ($selection['blockers'] ?? []))));
+
+                continue;
+            }
+
+            $contract = $selection['contract'];
+            $quote = $selection['quote'];
+            $intent = new OptionOrderIntent(
+                underlyingSymbol: $symbol,
+                optionType: (string) $contract['type'],
+                expirationDate: (string) $contract['expiration_date'],
+                strikePrice: (float) $contract['strike_price'],
+                side: 'buy',
+                positionEffect: 'open',
+                quantity: 1,
+                limitPrice: (float) $quote['ask'],
+                optionId: (string) $contract['option_id'],
+                chainId: $contract['chain_id'] ?? null,
+                underlyingType: $contract['underlying_type'] ?? 'equity',
+                source: 'theta:option-intent-producer:dry-run',
+            );
+            $context = array_merge($brokerContext, ['contract' => $contract, 'quote' => $quote]);
+
+            $structural = $rails->evaluate($intent, $cfg, $context, includeReview: false, includeCaps: ! $capitalIndependent);
+            if (! $structural->allowed()) {
+                $this->line(sprintf('%s: structural block — %s (%s)', $symbol, $structural->verdict(), implode('; ', $structural->blockReasons())));
+
+                continue;
+            }
+
+            $allocation = $this->allocationScore($intent, $momentum, $selection, $producer);
+            $capital = $rails->evaluate($intent, $cfg, $context, includeReview: false, includeCaps: true);
+
+            if (! $capital->allowed()) {
+                if ($capitalIndependent && $this->isCapitalOnlyBlock($capital)) {
+                    $this->info(sprintf('%s: WOULD EVALUATE → DEFER (capital) %s debit=%s — %s', $symbol, $intent->contractLabel(), $money($intent->estimatedDebit()), $this->firstBlockToken($capital)));
+                } else {
+                    $this->line(sprintf('%s: blocked — %s (%s)', $symbol, $capital->verdict(), implode('; ', $capital->blockReasons())));
+                }
+
+                continue;
+            }
+
+            $this->info(sprintf('%s: WOULD REVIEW → PLACE %s @ %s debit=%s expected_gain=%0.2f', $symbol, $intent->contractLabel(), $money($quote['ask']), $money($intent->estimatedDebit()), (float) ($allocation['expected_gain'] ?? 0.0)));
+        }
+
+        $this->info('dry-run preview complete — no orders reviewed or placed.');
     }
 
     private function produceExitIntents(RobinhoodMcpClient $client, array $cfg, array $producer, OptionRailPipeline $rails, JsonlRecorder $recorder, int $maxCreated): array

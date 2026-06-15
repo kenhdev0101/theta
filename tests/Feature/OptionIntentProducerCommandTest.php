@@ -577,6 +577,29 @@ class OptionIntentProducerCommandTest extends TestCase
         $this->assertGreaterThan(0, RobinhoodTradeJournal::query()->where('status', 'risk_aborted')->count());
     }
 
+    public function test_dry_run_previews_decisions_off_session_without_writes_or_orders(): void
+    {
+        // Pre-market (session closed): --dry-run must still evaluate and print
+        // the decision, while writing nothing and never reviewing/placing.
+        $this->travelTo(Carbon::parse('2026-06-12 05:00:00', 'America/New_York'));
+        config()->set('harness.options.producer.capital_independent_evaluation', true);
+        $this->optionStrikes = [742];
+        $this->optionQuotes = ['opt-742' => ['bid_price' => '0.680000', 'ask_price' => '0.700000']];
+        $this->buyingPower = 250.0;
+        $this->fakeDataAndBroker();
+
+        // "DRY RUN" printing at all proves the session gate was bypassed (the
+        // idle path returns before it); "SPY:" proves the ticker was evaluated.
+        $this->artisan('theta:option-intent-producer --symbols=SPY --dry-run')
+            ->expectsOutputToContain('DRY RUN')
+            ->expectsOutputToContain('SPY:')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, $this->reviewCalls, 'dry-run never reviews');
+        $this->assertSame(0, $this->placeCalls, 'dry-run never places');
+        $this->assertSame(0, RobinhoodTradeJournal::query()->count(), 'dry-run writes no journal rows');
+    }
+
     public function test_recent_same_symbol_entry_blocks_new_entry_before_review(): void
     {
         config()->set('harness.options.producer.entry_symbol_cooldown_minutes', 10);
