@@ -508,6 +508,75 @@ class OptionIntentProducerCommandTest extends TestCase
         $this->assertEqualsWithDelta(25.0, $selection['constraints']['buying_power_reserve_debit'], 0.0001);
     }
 
+    public function test_capital_independent_evaluation_selects_contract_and_defers_when_capital_short(): void
+    {
+        // Armed: decision-making must not depend on capital. A capital-short
+        // account still evaluates the ticker, selects a contract, and records
+        // execution_deferred — never reviewed, never placed, no broker review.
+        config()->set('harness.options.producer.capital_independent_evaluation', true);
+        $this->buyingPower = 5.00; // far below the ~$70 contract debit
+        $this->optionStrikes = [742];
+        $this->optionQuotes = ['opt-742' => ['bid_price' => '0.680000', 'ask_price' => '0.700000']];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')
+            ->expectsOutputToContain('execution deferred (capital)')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, $this->reviewCalls, 'no broker review is spent on an unfundable order');
+        $this->assertSame(0, $this->placeCalls);
+        $this->assertSame(0, RobinhoodTradeJournal::query()->where('status', 'reviewed')->count());
+
+        $row = RobinhoodTradeJournal::query()->where('status', 'execution_deferred')->sole();
+        $this->assertSame('SPY', $row->underlying_symbol);
+        $this->assertStringContainsString('execution_deferred_capital', $row->notes['producer_block']['reason']);
+        $this->assertStringContainsString('buying_power_insufficient', $row->notes['producer_block']['reason']);
+        // The ticker WAS evaluated: a contract was selected despite low capital.
+        $this->assertSame('opt-742', $row->scanner_payload['selection']['contract']['option_id']);
+        $this->assertTrue($row->scanner_payload['selection']['constraints']['capital_independent_selection']);
+    }
+
+    public function test_deferred_decision_is_reevaluated_and_promoted_when_capital_frees(): void
+    {
+        // Deferred decisions are never executed stale: they are re-evaluated
+        // fresh each cycle and only promote to `reviewed` once capital frees.
+        config()->set('harness.options.producer.capital_independent_evaluation', true);
+        config()->set('harness.options.producer.block_cooldown_minutes', 0);
+        $this->optionStrikes = [742];
+        $this->optionQuotes = ['opt-742' => ['bid_price' => '0.680000', 'ask_price' => '0.700000']];
+        $this->fakeDataAndBroker();
+
+        // Cycle 1 — capital short: evaluated, execution deferred, NOT placed.
+        $this->buyingPower = 5.00;
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')->assertExitCode(0);
+        $this->assertSame(0, $this->placeCalls);
+        $this->assertSame(0, $this->reviewCalls);
+        $this->assertSame(1, RobinhoodTradeJournal::query()->where('status', 'execution_deferred')->count());
+        $this->assertSame(0, RobinhoodTradeJournal::query()->where('status', 'reviewed')->count());
+
+        // Cycle 2 — capital freed: fresh re-evaluation promotes to reviewed.
+        $this->buyingPower = 250.00;
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')->assertExitCode(0);
+        $this->assertSame(1, $this->reviewCalls, 'a fresh review happens only once capital-ready');
+        $this->assertSame(1, RobinhoodTradeJournal::query()->where('status', 'reviewed')->count());
+    }
+
+    public function test_legacy_capital_coupled_mode_blocks_capital_short_before_evaluation(): void
+    {
+        // Flag off (default): legacy behaviour — capital gates the candidate at
+        // pre-review, recording risk_aborted (no execution_deferred rows).
+        $this->buyingPower = 5.00;
+        $this->optionStrikes = [742];
+        $this->optionQuotes = ['opt-742' => ['bid_price' => '0.680000', 'ask_price' => '0.700000']];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')->assertExitCode(0);
+
+        $this->assertSame(0, RobinhoodTradeJournal::query()->where('status', 'execution_deferred')->count());
+        $this->assertSame(0, RobinhoodTradeJournal::query()->where('status', 'reviewed')->count());
+        $this->assertGreaterThan(0, RobinhoodTradeJournal::query()->where('status', 'risk_aborted')->count());
+    }
+
     public function test_recent_same_symbol_entry_blocks_new_entry_before_review(): void
     {
         config()->set('harness.options.producer.entry_symbol_cooldown_minutes', 10);

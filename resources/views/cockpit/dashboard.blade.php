@@ -421,7 +421,7 @@
             const order = [
                 ['candidates','Candidates','neutral'], ['reviewed','Reviewed','info'],
                 ['placed','Placed','active'], ['filled','Filled','good'],
-                ['blocked','Blocked','warn'], ['rejected','Rejected','bad'],
+                ['deferred','Deferred','info'], ['blocked','Blocked','warn'], ['rejected','Rejected','bad'],
             ];
             el('scorecard').innerHTML = order.map(([k,label,tone]) =>
                 `<div class="score"><div class="n t-${tone}" style="color:var(--tone)">${sc[k]||0}</div><div class="l">${label}</div></div>`

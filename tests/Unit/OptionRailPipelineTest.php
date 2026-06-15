@@ -106,6 +106,20 @@ class OptionRailPipelineTest extends TestCase
         $this->assertTrue($verdict->allowed());
     }
 
+    public function test_include_caps_false_skips_the_capital_gate(): void
+    {
+        // Capital-short context: debit $52 exceeds $10 settled/buying power.
+        $capitalShort = $this->context(['settled_cash' => 10.0, 'buying_power' => 10.0]);
+
+        $blocked = $this->pipeline->evaluate($this->intent(), $this->cfg(), $capitalShort, includeReview: false, includeCaps: true);
+        $this->assertSame(OptionRailPipeline::BLOCK_CAP, $blocked->verdict());
+
+        // Capital gate excluded: the same intent is structurally allowed, so
+        // the decision layer can evaluate it independent of account capital.
+        $allowed = $this->pipeline->evaluate($this->intent(), $this->cfg(), $capitalShort, includeReview: false, includeCaps: false);
+        $this->assertSame(OptionRailVerdict::ALLOW, $allowed->verdict());
+    }
+
     public function test_option_level_2_passes_and_level_1_blocks_permission(): void
     {
         $this->assertSame(OptionRailVerdict::ALLOW, $this->evaluate()->verdict());

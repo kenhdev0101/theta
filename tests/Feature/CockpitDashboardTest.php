@@ -101,6 +101,25 @@ class CockpitDashboardTest extends TestCase
         $this->assertContains('Outperforming', $structureLabels);
     }
 
+    public function test_flat_account_reports_account_value_as_cash_not_unverified(): void
+    {
+        // Regression: a flat account (no positions) has a positions value of $0,
+        // so account value must equal cash and read verified — not "unverified".
+        $snapshot = $this->snapshotArray();
+        $snapshot['positions'] = ['equity' => [], 'option' => []];
+        $snapshot['derived']['positions_market_value'] = 0.0;
+        $snapshot['derived']['open_option_positions'] = 0;
+        $snapshot['cash'] = 482.47;
+        Cache::put(CockpitSnapshot::CACHE_KEY, $snapshot, now()->addMinutes(15));
+
+        $this->getJson('/cockpit/data')
+            ->assertOk()
+            ->assertJsonPath('account.account_value.value', 482.47)
+            ->assertJsonPath('account.account_value.verified', true)
+            ->assertJsonPath('account.positions_value.value', 0)
+            ->assertJsonPath('account.positions_value.verified', true);
+    }
+
     public function test_data_endpoint_surfaces_snapshot_read_failures(): void
     {
         $snapshot = $this->snapshotArray();

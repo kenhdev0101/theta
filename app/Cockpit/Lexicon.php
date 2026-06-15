@@ -53,6 +53,7 @@ final class Lexicon
         'expired' => ['Expired', 'Order expired without filling.', self::TONE_NEUTRAL],
         'risk_aborted' => ['Risk-aborted', 'A risk rail blocked it before the broker. Not a market outcome.', self::TONE_WARN],
         'scan_suppressed' => ['Scan-suppressed', 'Producer scan was rate-limited this cycle; not advanced.', self::TONE_NEUTRAL],
+        'execution_deferred' => ['Execution deferred', 'A valid, evaluated setup held back only by capital (settled cash / buying power / caps). It re-promotes automatically once capital frees — evaluation never depended on capital.', self::TONE_INFO],
     ];
 
     // ── Trading intent / direction ───────────────────────────────────────
@@ -215,6 +216,9 @@ final class Lexicon
         'broker_truth_mechanical_blocker' => ['Broker read blocked', 'A broker-truth read hit a mechanical blocker.', self::TONE_WARN],
         'placement_mechanical_failure' => ['Placement error', 'Order placement hit a mechanical failure.', self::TONE_BAD],
         'rail_block' => ['Risk rail block', 'Blocked by a risk rail.', self::TONE_WARN],
+
+        // execution deferral (capital-only — evaluation still happened)
+        'execution_deferred_capital' => ['Execution deferred (capital)', 'Setup is valid and evaluated; execution is held only by capital availability.', self::TONE_INFO],
 
         // producer entry/exit (prefix-style)
         'data_plane_mechanical_blocker' => ['Data plane blocked', 'The market-data plane hit a mechanical blocker.', self::TONE_WARN],

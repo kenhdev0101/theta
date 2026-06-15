@@ -72,7 +72,7 @@ final class TelemetryReader
         $reasons = [];
 
         $rows = RobinhoodTradeJournal::query()
-            ->whereIn('status', self::BLOCKED_STATUSES)
+            ->whereIn('status', array_merge(self::BLOCKED_STATUSES, ['execution_deferred']))
             ->where('updated_at', '>=', now()->startOfDay())
             ->get(['notes']);
 
@@ -114,6 +114,7 @@ final class TelemetryReader
             'reviewed' => 0,
             'placed' => 0,
             'filled' => 0,
+            'deferred' => 0,
             'blocked' => 0,
             'rejected' => 0,
         ];
@@ -124,6 +125,7 @@ final class TelemetryReader
                 in_array($status, ['submitted', 'open', 'partially_filled'], true) => $score['placed']++,
                 $status === 'filled' => $score['filled']++,
                 $status === 'reviewed' => $score['reviewed']++,
+                $status === 'execution_deferred' => $score['deferred']++,
                 $status === 'rejected' => $score['rejected']++,
                 in_array($status, self::BLOCKED_STATUSES, true) => $score['blocked']++,
                 in_array($status, ['candidate', 'watchlisted'], true) => $score['candidates']++,

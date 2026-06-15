@@ -60,7 +60,15 @@ final class OptionRailPipeline
         'halt', 'restricted', 'not tradable', 'unavailable', 'permission', 'level',
     ];
 
-    public function evaluate(OptionOrderIntent $intent, array $cfg, array $context, bool $includeReview = true): OptionRailVerdict
+    /**
+     * @param  bool  $includeReview  append the broker-review gate
+     * @param  bool  $includeCaps     append the capital/allocation gate. The
+     *                                decision layer evaluates candidate quality
+     *                                with this OFF (capital must not gate
+     *                                evaluation); the execution layer always
+     *                                runs it ON before placing.
+     */
+    public function evaluate(OptionOrderIntent $intent, array $cfg, array $context, bool $includeReview = true, bool $includeCaps = true): OptionRailVerdict
     {
         $results = [
             $this->killSwitchGate($cfg),
@@ -71,9 +79,13 @@ final class OptionRailPipeline
             $this->quoteFreshnessGate($cfg, $context),
             $this->spreadGate($intent, $cfg, $context),
             $this->marketabilityGate($intent, $context),
-            $this->capsGate($intent, $cfg, $context),
-            $this->duplicateGate($intent, $context),
         ];
+
+        if ($includeCaps) {
+            $results[] = $this->capsGate($intent, $cfg, $context);
+        }
+
+        $results[] = $this->duplicateGate($intent, $context);
 
         if ($includeReview) {
             $results[] = $this->reviewGate($context);

@@ -335,6 +335,12 @@ final class CockpitSnapshot
 
     private function portfolioMarketValue(array $equityPositions, array $optionPositions): ?float
     {
+        // Flat account: positions value is definitively $0 (verified), not
+        // unverifiable. Only return null when positions exist but can't be marked.
+        if ($equityPositions === [] && $optionPositions === []) {
+            return 0.0;
+        }
+
         $total = 0.0;
         $any = false;
 

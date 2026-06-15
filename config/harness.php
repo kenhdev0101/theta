@@ -104,6 +104,11 @@ return [
             'momentum_bar_fresh_seconds' => (int) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_BAR_FRESH_SECONDS', 180),
             'momentum_min_return_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_MIN_RETURN_BPS', 3.0),
             'momentum_min_volume_expansion' => (float) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_MIN_VOLUME_EXPANSION', 0.5),
+            // Decision/execution separation: evaluate and select candidates
+            // independent of account capital; gate capital at execution only
+            // (capital-short setups record as execution_deferred and re-promote
+            // once capital frees). Default-off rollout; armed via env on the box.
+            'capital_independent_evaluation' => (bool) env('HARNESS_OPTIONS_PRODUCER_CAPITAL_INDEPENDENT', false),
             'underlying_max_spread_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_UNDERLYING_MAX_SPREAD_BPS', 5.0),
             'exit_enabled' => (bool) env('HARNESS_OPTIONS_PRODUCER_EXIT_ENABLED', true),
             'exit_profit_target_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_PROFIT_TARGET_BPS', 1200.0),

@@ -11,8 +11,10 @@ use App\Robinhood\Mcp\OAuthTokenStore;
 use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Options\OptionBrokerContext;
+use App\Robinhood\Options\OptionGateResult;
 use App\Robinhood\Options\OptionOrderIntent;
 use App\Robinhood\Options\OptionRailPipeline;
+use App\Robinhood\Options\OptionRailVerdict;
 use App\Robinhood\Options\MomentumUniverseSelector;
 use App\Robinhood\Rails\SessionClock;
 use App\Robinhood\Telemetry\JsonlRecorder;
@@ -86,6 +88,10 @@ class OptionIntentProducerCommand extends Command
 
         $created = 0;
         $blocked = 0;
+        $deferred = 0;
+        // Decision/execution separation: when armed, evaluation never depends on
+        // capital — capital gates execution only (capital-short setups defer).
+        $capitalIndependent = (bool) ($producer['capital_independent_evaluation'] ?? false);
         $entryBrokerContext = null;
         $entryCandidates = [];
 
@@ -185,6 +191,7 @@ class OptionIntentProducerCommand extends Command
                 (float) $underlying['ask'],
                 (string) ($momentum['option_type'] ?? $producer['option_type'] ?? 'call'),
                 $brokerContext,
+                $capitalIndependent,
             );
             if (($selection['contract'] ?? null) === null || ($selection['quote'] ?? null) === null) {
                 $blocked++;
@@ -222,7 +229,10 @@ class OptionIntentProducerCommand extends Command
                 'quote' => $quote,
             ]);
 
-            $preVerdict = $rails->evaluate($intent, $cfg, $context, includeReview: false);
+            // Candidate quality is capital-independent (when armed): evaluate the
+            // structural/marketability gates WITHOUT caps so a capital-short
+            // ticker is still a valid candidate; capital gates execution only.
+            $preVerdict = $rails->evaluate($intent, $cfg, $context, includeReview: false, includeCaps: ! $capitalIndependent);
             if (! $preVerdict->allowed()) {
                 $blocked++;
                 if (! $this->recentProducerBlockExists($symbol, $producer)) {
@@ -297,6 +307,38 @@ class OptionIntentProducerCommand extends Command
                 continue;
             }
 
+            // Capital/allocation gates EXECUTION only — never evaluation. A valid
+            // setup that is merely capital-short (e.g. sale proceeds awaiting
+            // settlement) is recorded as execution-deferred and re-promoted once
+            // capital frees. We check this BEFORE the broker review so we never
+            // spend a review call on an order we cannot fund. Deferred rows are
+            // NOT executable — only a fresh re-evaluation next cycle promotes a
+            // capital-ready candidate to `reviewed`.
+            if ($capitalIndependent) {
+                $capitalVerdict = $rails->evaluate($intent, $cfg, $context, includeReview: false, includeCaps: true);
+                if (! $capitalVerdict->allowed()) {
+                    if ($this->isCapitalOnlyBlock($capitalVerdict)) {
+                        $deferred++;
+                        $this->recordProducerBlock($symbol, 'execution_deferred_capital: '.$this->firstBlockToken($capitalVerdict), [
+                            'underlying_quote' => $candidate['underlying'],
+                            'momentum_signal' => $candidate['momentum'],
+                            'selection' => $candidate['selection'],
+                            'allocation' => $candidate['allocation'],
+                            'rail_verdict' => $capitalVerdict->toArray(),
+                        ], $producer, status: 'execution_deferred');
+                        $this->info("{$symbol}: evaluated; execution deferred (capital) {$capitalVerdict->verdict()}");
+                    } else {
+                        $blocked++;
+                        if (! $this->recentProducerBlockExists($symbol, $producer)) {
+                            $this->journalIntent($intent, 'risk_aborted', $candidate['underlying'], $candidate['momentum'], $candidate['selection'], [], $capitalVerdict->toArray());
+                        }
+                        $this->warn("{$symbol}: producer rail block {$capitalVerdict->verdict()}");
+                    }
+
+                    continue;
+                }
+            }
+
             try {
                 $executor = new \App\Robinhood\Options\OptionExecutor(
                     $client,
@@ -342,9 +384,38 @@ class OptionIntentProducerCommand extends Command
             ));
         }
 
-        $this->info("producer complete: created={$created} blocked={$blocked}");
+        $this->info("producer complete: created={$created} blocked={$blocked} deferred={$deferred}");
 
         return self::SUCCESS;
+    }
+
+    /** True when every blocking gate in the verdict is the capital/allocation gate. */
+    private function isCapitalOnlyBlock(OptionRailVerdict $verdict): bool
+    {
+        $blocking = array_filter($verdict->results, fn (OptionGateResult $r): bool => ! $r->ok);
+        if ($blocking === []) {
+            return false;
+        }
+
+        foreach ($blocking as $result) {
+            if ($result->gate !== 'caps') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** First blocking reason token (gate prefix stripped), e.g. "buying_power_insufficient". */
+    private function firstBlockToken(OptionRailVerdict $verdict): string
+    {
+        foreach ($verdict->results as $result) {
+            if (! $result->ok) {
+                return (string) $result->reason;
+            }
+        }
+
+        return 'unknown';
     }
 
     private function produceExitIntents(RobinhoodMcpClient $client, array $cfg, array $producer, OptionRailPipeline $rails, JsonlRecorder $recorder, int $maxCreated): array
@@ -961,11 +1032,15 @@ class OptionIntentProducerCommand extends Command
         ];
     }
 
-    private function selectContract(RobinhoodMcpClient $client, array $cfg, string $symbol, float $underlyingAsk, ?string $optionType = null, array $brokerContext = []): array
+    private function selectContract(RobinhoodMcpClient $client, array $cfg, string $symbol, float $underlyingAsk, ?string $optionType = null, array $brokerContext = [], bool $capitalIndependent = false): array
     {
         $options = (array) ($cfg['options'] ?? []);
         $producer = (array) ($options['producer'] ?? []);
-        $premiumCaps = $this->producerPremiumCaps($options, $brokerContext, $symbol);
+        // When armed, selection sizes to STRATEGY caps only — capital must not
+        // gate evaluation. The capital-aware caps are still recorded for
+        // visibility (they gate execution at the caps rail, surfaced as
+        // execution deferral).
+        $premiumCaps = $this->producerPremiumCaps($options, $brokerContext, $symbol, capitalIndependent: $capitalIndependent);
         $maxPremium = $premiumCaps === [] ? null : round((float) min($premiumCaps), 4);
         $maxPremiumLimiter = $premiumCaps === []
             ? null
@@ -974,6 +1049,7 @@ class OptionIntentProducerCommand extends Command
         $selectionConstraints = [
             'max_premium' => $maxPremium,
             'contract_multiplier' => (float) ($options['contract_multiplier'] ?? 100.0),
+            'capital_independent_selection' => $capitalIndependent,
             'buying_power' => $brokerContext['buying_power'] ?? null,
             'settled_cash' => $brokerContext['settled_cash'] ?? null,
             'options_open_debit' => $brokerContext['options_open_debit'] ?? null,
@@ -984,6 +1060,8 @@ class OptionIntentProducerCommand extends Command
         ];
         $selectionConstraints['max_premium_limiter'] = $maxPremiumLimiter;
         $selectionConstraints['premium_caps'] = $premiumCaps;
+        // What capital would constrain at execution (informational only).
+        $selectionConstraints['execution_premium_caps'] = $this->producerPremiumCaps($options, $brokerContext, $symbol, capitalIndependent: false);
 
         if ($maxPremium === null) {
             return ['contract' => null, 'quote' => null, 'blockers' => ['producer_max_premium_unconfigured'], 'constraints' => $selectionConstraints];
@@ -1116,7 +1194,14 @@ class OptionIntentProducerCommand extends Command
     }
 
     /** @return array<string, float> */
-    private function producerPremiumCaps(array $options, array $brokerContext, string $symbol): array
+    /**
+     * @param  bool  $capitalIndependent  when true, return ONLY the strategy/
+     *   config premium caps (max contract ask, per-play debit) and omit every
+     *   account-capital cap (buying power, settled cash, reserve, remaining
+     *   debits). Candidate selection uses this so evaluation never depends on
+     *   available capital; capital gates execution at the caps rail instead.
+     */
+    private function producerPremiumCaps(array $options, array $brokerContext, string $symbol, bool $capitalIndependent = false): array
     {
         $producer = (array) ($options['producer'] ?? []);
         $multiplier = (float) ($options['contract_multiplier'] ?? 100.0);
@@ -1124,10 +1209,19 @@ class OptionIntentProducerCommand extends Command
             return [];
         }
 
+        // Strategy/config caps always bound a candidate — they describe the
+        // play we would make, not whether we can currently fund it.
         $caps = [
             'max_contract_ask' => (float) ($options['max_contract_ask'] ?? 5.0),
             'per_play_max_debit' => (float) ($options['per_play_max_debit'] ?? 0.0) / $multiplier,
         ];
+
+        if ($capitalIndependent) {
+            $positiveCaps = array_filter($caps, fn (float $cap): bool => $cap >= 0.0);
+            asort($positiveCaps);
+
+            return array_map(fn (float $cap): float => round($cap, 4), $positiveCaps);
+        }
 
         foreach (['buying_power', 'settled_cash'] as $key) {
             if (isset($brokerContext[$key]) && is_numeric($brokerContext[$key])) {
@@ -1312,7 +1406,7 @@ class OptionIntentProducerCommand extends Command
         return ['momentum_signal' => $signal];
     }
 
-    private function recentProducerBlockExists(string $symbol, array $producer): bool
+    private function recentProducerBlockExists(string $symbol, array $producer, string $status = 'risk_aborted'): bool
     {
         $minutes = max(0, (int) ($producer['block_cooldown_minutes'] ?? 5));
         if ($minutes === 0) {
@@ -1322,16 +1416,21 @@ class OptionIntentProducerCommand extends Command
         return RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
             ->where('underlying_symbol', strtoupper($symbol))
-            ->where('status', 'risk_aborted')
+            ->where('status', $status)
             ->where('created_at', '>=', now()->subMinutes($minutes))
             ->where('scanner_payload->intent_source', 'theta:option-intent-producer')
             ->exists();
     }
 
-    private function recordProducerBlock(string $symbol, string $reason, array $payload = [], array $producer = []): ?RobinhoodTradeJournal
+    /**
+     * Record a producer outcome row with cooldown-based anti-spam. $status is
+     * 'risk_aborted' for genuine blocks and 'execution_deferred' for valid
+     * setups held back only by capital (so the cockpit can distinguish them).
+     */
+    private function recordProducerBlock(string $symbol, string $reason, array $payload = [], array $producer = [], string $status = 'risk_aborted'): ?RobinhoodTradeJournal
     {
-        if ($this->recentProducerBlockExists($symbol, $producer)) {
-            return $this->recordSuppressedProducerBlock($symbol, $reason, $payload);
+        if ($this->recentProducerBlockExists($symbol, $producer, $status)) {
+            return $this->recordSuppressedProducerBlock($symbol, $reason, $payload, $status);
         }
 
         return RobinhoodTradeJournal::query()->create([
@@ -1339,7 +1438,7 @@ class OptionIntentProducerCommand extends Command
             'asset_class' => 'option',
             'symbol' => strtoupper($symbol),
             'underlying_symbol' => strtoupper($symbol),
-            'status' => 'risk_aborted',
+            'status' => $status,
             'intent' => 'producer_scan',
             'strategy_label' => 'theta_option_single_leg',
             'scanner_payload' => array_merge(['intent_source' => 'theta:option-intent-producer'], $payload),
@@ -1352,12 +1451,12 @@ class OptionIntentProducerCommand extends Command
         ]);
     }
 
-    private function recordSuppressedProducerBlock(string $symbol, string $reason, array $payload = []): RobinhoodTradeJournal
+    private function recordSuppressedProducerBlock(string $symbol, string $reason, array $payload = [], string $blockedStatus = 'risk_aborted'): RobinhoodTradeJournal
     {
         $recent = RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
             ->where('underlying_symbol', strtoupper($symbol))
-            ->where('status', 'risk_aborted')
+            ->where('status', $blockedStatus)
             ->where('scanner_payload->intent_source', 'theta:option-intent-producer')
             ->latest('id')
             ->first(['id', 'created_at', 'notes']);
