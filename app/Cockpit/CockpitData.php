@@ -288,17 +288,23 @@ final class CockpitData
 
     private function sumUnrealized(array $snapshot): ?float
     {
+        $positions = array_merge($snapshot['positions']['option'] ?? [], $snapshot['positions']['equity'] ?? []);
+
+        // Flat account: open unrealized P&L is a verified $0, not unverifiable.
+        if ($positions === []) {
+            return 0.0;
+        }
+
         $total = 0.0;
         $any = false;
-        foreach (['option', 'equity'] as $class) {
-            foreach ($snapshot['positions'][$class] ?? [] as $p) {
-                if (($p['unrealized_pnl'] ?? null) !== null) {
-                    $total += (float) $p['unrealized_pnl'];
-                    $any = true;
-                }
+        foreach ($positions as $p) {
+            if (($p['unrealized_pnl'] ?? null) !== null) {
+                $total += (float) $p['unrealized_pnl'];
+                $any = true;
             }
         }
 
+        // Positions exist but none could be marked → genuinely unverified.
         return $any ? round($total, 2) : null;
     }
 
@@ -571,7 +577,10 @@ final class CockpitData
             return null;
         }
         try {
-            return (int) max(0, now()->diffInSeconds(Carbon::parse($ts)));
+            // Carbon 3 diffInSeconds is SIGNED — a past timestamp yields a
+            // negative value, so abs() (not max(0, …), which would clamp every
+            // elapsed age to 0) gives the true seconds-since.
+            return (int) abs(now()->diffInSeconds(Carbon::parse($ts)));
         } catch (Throwable) {
             return null;
         }

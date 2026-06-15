@@ -117,7 +117,31 @@ class CockpitDashboardTest extends TestCase
             ->assertJsonPath('account.account_value.value', 482.47)
             ->assertJsonPath('account.account_value.verified', true)
             ->assertJsonPath('account.positions_value.value', 0)
-            ->assertJsonPath('account.positions_value.verified', true);
+            ->assertJsonPath('account.positions_value.verified', true)
+            // Flat account: open unrealized P&L is a verified $0, not unverified.
+            ->assertJsonPath('account.pnl.unrealized_open', 0)
+            ->assertJsonPath('account.pnl.realized_today', 0);
+    }
+
+    public function test_decision_age_reflects_elapsed_time_not_zero(): void
+    {
+        // Regression: Carbon 3 diffs are signed, so the old max(0, …) clamped
+        // every elapsed age to 0 ("time since decision" always said zero).
+        $this->seedSnapshot();
+        $row = RobinhoodTradeJournal::query()->create([
+            'asset_class' => 'option',
+            'symbol' => 'SPY',
+            'underlying_symbol' => 'SPY',
+            'status' => 'reviewed',
+            'intent' => 'long_call',
+        ]);
+        RobinhoodTradeJournal::query()->where('id', $row->id)->update(['updated_at' => now()->subSeconds(150)]);
+
+        $decisions = $this->getJson('/cockpit/data')->assertOk()->json('decisions');
+        $decision = collect($decisions)->firstWhere('id', $row->id);
+
+        $this->assertNotNull($decision);
+        $this->assertGreaterThanOrEqual(120, $decision['age'], 'age should reflect elapsed seconds, not 0');
     }
 
     public function test_data_endpoint_surfaces_snapshot_read_failures(): void

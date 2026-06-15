@@ -183,7 +183,10 @@ final class CockpitSnapshot
         }
 
         try {
-            return max(0.0, now()->floatDiffInSeconds(Carbon::parse($capturedAt)));
+            // Carbon 3 diffs are signed; abs() gives true elapsed seconds (a
+            // max(0, …) here would read every cached snapshot as 0s-fresh and
+            // suppress the inline refresh fallback).
+            return abs(now()->floatDiffInSeconds(Carbon::parse($capturedAt)));
         } catch (Throwable) {
             return PHP_FLOAT_MAX;
         }
