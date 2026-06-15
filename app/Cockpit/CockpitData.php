@@ -51,7 +51,39 @@ final class CockpitData
             'reconciliation' => $this->reconciliation($snapshot),
             'system_events' => $this->systemEvents(),
             'mcp_health' => $this->telemetry->mcpHealth(),
+            'monitor' => $this->monitor(),
             'snapshot_errors' => $snapshot['errors'] ?? [],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function monitor(): array
+    {
+        $m = $this->telemetry->latestMonitor();
+        if ($m === null) {
+            return [
+                'present' => false,
+                'severity' => $this->chip('No run yet', 'The behaviour monitor has not run today.', Lexicon::TONE_NEUTRAL),
+                'summary' => null, 'alerts' => [], 'lines' => [], 'age' => null,
+            ];
+        }
+
+        $sev = (string) ($m['severity'] ?? 'nominal');
+        $tone = match ($sev) {
+            'critical' => Lexicon::TONE_BAD,
+            'warn' => Lexicon::TONE_WARN,
+            'nominal' => Lexicon::TONE_GOOD,
+            default => Lexicon::TONE_NEUTRAL,
+        };
+
+        return [
+            'present' => true,
+            'severity' => $this->chip(ucfirst($sev), (string) ($m['summary'] ?? ''), $tone),
+            'summary' => $m['summary'] ?? null,
+            'alerts' => array_values((array) ($m['alerts'] ?? [])),
+            'lines' => array_values((array) ($m['lines'] ?? [])),
+            'age' => $this->ageOf($m['ts'] ?? null),
+            'ts' => $m['ts'] ?? null,
         ];
     }
 
@@ -75,6 +107,7 @@ final class CockpitData
             'broker_credits' => $this->creditsChip(),
             'data_plane' => $this->dataPlaneChip(),
             'snapshot' => $this->snapshotChip($snapshot),
+            'monitor' => $this->monitor()['severity'],
         ];
     }
 

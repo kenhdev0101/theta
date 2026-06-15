@@ -30,3 +30,20 @@ Schedule::command('theta:cockpit-snapshot')
     ->weekdays()
     ->everyMinute()
     ->withoutOverlapping();
+
+// Behaviour monitor: every 30 min from market open through midday (Eastern),
+// pushing a digest each cycle (--heartbeat). Eastern timezone so the window
+// tracks the session across DST.
+Schedule::command('theta:cockpit-monitor --heartbeat')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->everyThirtyMinutes()
+    ->between('9:30', '12:00')
+    ->withoutOverlapping();
+
+// Grant-expiry safety net: a daily pre-market check that pushes only when
+// something needs attention (e.g. the OAuth grant is within its warn window).
+Schedule::command('theta:cockpit-monitor')
+    ->timezone('America/New_York')
+    ->dailyAt('8:00')
+    ->withoutOverlapping();

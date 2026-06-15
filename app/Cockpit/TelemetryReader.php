@@ -200,6 +200,23 @@ final class TelemetryReader
     }
 
     /**
+     * Latest behaviour-monitor digest (from the cockpit_monitor stream).
+     *
+     * @return array<string,mixed>|null
+     */
+    public function latestMonitor(): ?array
+    {
+        $events = $this->readStream('cockpit_monitor');
+        for ($i = count($events) - 1; $i >= 0; $i--) {
+            if (($events[$i]['event'] ?? null) === 'monitor') {
+                return $events[$i];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Latest market-data-plane freshness signal (from the data_plane stream).
      *
      * @return array<string,mixed>|null

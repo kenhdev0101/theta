@@ -205,6 +205,10 @@
         </div>
         <div class="col">
             <section class="panel">
+                <h2>Monitor <span class="badge" id="monitor-badge"></span></h2>
+                <div class="body" id="monitor"></div>
+            </section>
+            <section class="panel">
                 <h2>Why it isn't trading <span class="badge">today's blocks</span></h2>
                 <div class="body" id="whynot"></div>
             </section>
@@ -323,7 +327,8 @@
                 stat('OAuth', sb.oauth) +
                 stat('Broker credits', sb.broker_credits, credSub) +
                 stat('Data plane', sb.data_plane, sb.data_plane.age!=null?('checked '+ageStr(sb.data_plane.age)+' ago'):'') +
-                stat('Snapshot', sb.snapshot, 'cache: ' + (sb.snapshot.cache||'—'));
+                stat('Snapshot', sb.snapshot, 'cache: ' + (sb.snapshot.cache||'—')) +
+                stat('Monitor', sb.monitor);
 
             // snapshot errors
             const errs = d.snapshot_errors || {};
@@ -359,6 +364,9 @@
             // decisions feed
             renderFeed('decisions', d.decisions, 'No decisions recorded yet today. The producer and autopilot run every minute during the session.');
             el('decisions-badge').textContent = (d.decisions||[]).length + ' today';
+
+            // monitor
+            renderMonitor(d.monitor);
 
             // why not
             renderWhy(d.why_not_trading);
@@ -446,6 +454,23 @@
             }).join('');
         }
         const signed = v => { const n=Number(v); return `<span class="${n>0?'pos':(n<0?'neg':'')}">${(n>0?'+':'')}$${Math.abs(n).toFixed(2)}</span>`; };
+
+        function renderMonitor(m) {
+            el('monitor-badge').textContent = m && m.age != null ? ageStr(m.age) + ' ago' : '';
+            if (!m || !m.present) {
+                el('monitor').innerHTML = `<div class="empty">No monitor run yet today. It runs every 30 min, 9:30–noon ET, on weekdays.</div>`;
+                return;
+            }
+            const alerts = (m.alerts||[]).map(a => {
+                const tone = a.severity === 'critical' ? 'bad' : (a.severity === 'warn' ? 'warn' : 'neutral');
+                return `<div class="why-row t-${tone}"><div class="cnt" style="color:var(--tone);font-size:13px">${a.severity==='critical'?'●':'⚠'}</div><div class="meat">${esc(a.message)}</div></div>`;
+            }).join('');
+            const lines = (m.lines||[]).map(l => `<div style="color:var(--muted);font-size:11.5px;padding:1px 0">${esc(l)}</div>`).join('');
+            el('monitor').innerHTML =
+                `<div class="feed-row"><div class="main"><div class="line1">${chip(m.severity)} <span style="color:var(--muted)">${esc(m.summary||'')}</span></div></div></div>`
+                + alerts
+                + (lines ? `<div style="padding:8px 14px;border-top:1px solid var(--border)">${lines}</div>` : '');
+        }
 
         function renderWhy(rows) {
             if (!rows || !rows.length) { el('whynot').innerHTML = `<div class="empty">No blocks recorded today — nothing is being gated.</div>`; return; }

@@ -140,4 +140,14 @@ return [
         'dir' => env('HARNESS_TELEMETRY_DIR', storage_path('harness')),
         'agent_id' => env('HARNESS_AGENT_ID', 'theta-harness'),
     ],
+
+    // Cockpit behaviour monitor — on-box anomaly digest + operator push alerts.
+    // Read-only; default-off until a webhook channel is configured.
+    'monitor' => [
+        'enabled' => (bool) env('HARNESS_MONITOR_ENABLED', false),
+        'webhook_url' => env('HARNESS_MONITOR_WEBHOOK_URL'),
+        'webhook_format' => env('HARNESS_MONITOR_WEBHOOK_FORMAT', 'slack'), // slack|discord|ntfy|raw
+        'grant_warn_hours' => (int) env('HARNESS_MONITOR_GRANT_WARN_HOURS', 24),
+        'snapshot_stale_seconds' => (int) env('HARNESS_MONITOR_SNAPSHOT_STALE_SECONDS', 180),
+    ],
 ];
