@@ -23,6 +23,18 @@ return [
     // the primary path — see App\Robinhood\Mcp\OAuthTokenStore).
     'oauth_token' => env('HARNESS_OAUTH_TOKEN'),
 
+    // Broker API credit budget. This is enforced at the Robinhood MCP
+    // transport boundary, so every consumer must acquire credits before an
+    // outbound broker HTTP request. Keep conservative until the broker
+    // publishes exact MCP limits.
+    'broker_credits' => [
+        'enabled' => (bool) env('HARNESS_BROKER_CREDITS_ENABLED', true),
+        'max_per_minute' => (int) env('HARNESS_BROKER_CREDITS_PER_MINUTE', 45),
+        'mode' => env('HARNESS_BROKER_CREDITS_MODE', 'wait'), // wait|fail
+        'max_wait_seconds' => (int) env('HARNESS_BROKER_CREDITS_MAX_WAIT_SECONDS', 20),
+        'cache_key' => env('HARNESS_BROKER_CREDITS_KEY', 'theta:robinhood:mcp:credits'),
+    ],
+
     // Sanctum-style bearer for the read-only telemetry API.
     'telemetry_token' => env('HARNESS_TELEMETRY_TOKEN'),
 
@@ -66,10 +78,42 @@ return [
         'max_contract_ask' => (float) env('HARNESS_OPTIONS_MAX_CONTRACT_ASK', 5.00),
         'per_play_max_debit' => (float) env('HARNESS_OPTIONS_PER_PLAY_MAX_DEBIT', 75.00),
         'per_day_max_debit' => (float) env('HARNESS_OPTIONS_PER_DAY_MAX_DEBIT', 250.00),
-        'per_underlying_max_debit' => (float) env('HARNESS_OPTIONS_PER_UNDERLYING_MAX_DEBIT', 100.00),
+        'daily_gross_entry_debit' => (float) env('HARNESS_OPTIONS_DAILY_GROSS_ENTRY_DEBIT', 500.00),
+        'per_underlying_max_debit' => (float) env('HARNESS_OPTIONS_PER_UNDERLYING_MAX_DEBIT', 50.00),
         'max_open_positions' => (int) env('HARNESS_OPTIONS_MAX_OPEN_POSITIONS', 4),
         'min_quote_fresh_seconds' => (int) env('HARNESS_OPTIONS_QUOTE_FRESH_SECONDS', 10),
+        'metadata_cache_seconds' => (int) env('HARNESS_OPTIONS_METADATA_CACHE_SECONDS', 900),
         'contract_multiplier' => 100.0,
+        'producer' => [
+            'enabled' => (bool) env('HARNESS_OPTIONS_PRODUCER_ENABLED', true),
+            'universe_source' => env('HARNESS_OPTIONS_PRODUCER_UNIVERSE_SOURCE', 'dynamic'), // dynamic|static
+            'symbols' => array_values(array_filter(array_map(
+                'trim',
+                explode(',', env('HARNESS_OPTIONS_PRODUCER_SYMBOLS', 'SPY,QQQ,IWM,DIA,SMH,SOXX,XLF,XLK,XLE,NVDA,AAPL,MSFT,META,AMZN,AMD,TSLA,GOOGL')),
+            ))),
+            'dynamic_max_symbols' => (int) env('HARNESS_OPTIONS_PRODUCER_DYNAMIC_MAX_SYMBOLS', 6),
+            'option_type' => env('HARNESS_OPTIONS_PRODUCER_OPTION_TYPE', 'auto'),
+            'expiration_min_days' => (int) env('HARNESS_OPTIONS_PRODUCER_EXPIRATION_MIN_DAYS', 1),
+            'max_chain_pages' => (int) env('HARNESS_OPTIONS_PRODUCER_MAX_CHAIN_PAGES', 3),
+            'quote_chunk_limit' => (int) env('HARNESS_OPTIONS_PRODUCER_QUOTE_CHUNK_LIMIT', 3),
+            'block_cooldown_minutes' => (int) env('HARNESS_OPTIONS_PRODUCER_BLOCK_COOLDOWN_MINUTES', 5),
+            'entry_symbol_cooldown_minutes' => (int) env('HARNESS_OPTIONS_PRODUCER_ENTRY_SYMBOL_COOLDOWN_MINUTES', 10),
+            'buying_power_reserve_debit' => (float) env('HARNESS_OPTIONS_PRODUCER_BUYING_POWER_RESERVE_DEBIT', 25.00),
+            'momentum_timeframe' => env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_TIMEFRAME', '1Min'),
+            'momentum_lookback_bars' => (int) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_LOOKBACK_BARS', 10),
+            'momentum_bar_fresh_seconds' => (int) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_BAR_FRESH_SECONDS', 180),
+            'momentum_min_return_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_MIN_RETURN_BPS', 3.0),
+            'momentum_min_volume_expansion' => (float) env('HARNESS_OPTIONS_PRODUCER_MOMENTUM_MIN_VOLUME_EXPANSION', 0.5),
+            'underlying_max_spread_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_UNDERLYING_MAX_SPREAD_BPS', 5.0),
+            'exit_enabled' => (bool) env('HARNESS_OPTIONS_PRODUCER_EXIT_ENABLED', true),
+            'exit_profit_target_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_PROFIT_TARGET_BPS', 1200.0),
+            'exit_stop_loss_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_STOP_LOSS_BPS', 2000.0),
+            'exit_max_hold_minutes' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_MAX_HOLD_MINUTES', 1.0),
+            'exit_max_hold_min_pnl_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_MAX_HOLD_MIN_PNL_BPS', 1.0),
+            'allocation_capital_lock_days' => (float) env('HARNESS_OPTIONS_PRODUCER_ALLOCATION_CAPITAL_LOCK_DAYS', 1.0),
+            'allocation_min_expected_gain' => (float) env('HARNESS_OPTIONS_PRODUCER_ALLOCATION_MIN_EXPECTED_GAIN', 0.0),
+            'allocation_expected_gain_multiplier' => (float) env('HARNESS_OPTIONS_PRODUCER_ALLOCATION_EXPECTED_GAIN_MULTIPLIER', 1.0),
+        ],
         'required_tools' => [
             'get_option_chains',
             'get_option_instruments',

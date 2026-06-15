@@ -154,6 +154,6 @@ The bootstrap above is implemented and live. Options addendum:
   No multi-leg spreads. No model contract selection — the deterministic
   resolver picks the contract.
 - Review probes (`theta:option-review-probe`) are allowed; live placement
-  waits for explicit operator invocation of `theta:option-live-place`.
+  can be routed by scheduled autopilot once a complete journaled intent exists.
 - Broker truth remains the source of truth; option fills require
   broker_order_id + option_id + filled qty/price > 0.

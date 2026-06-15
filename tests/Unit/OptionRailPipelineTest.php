@@ -29,6 +29,7 @@ class OptionRailPipelineTest extends TestCase
                 'max_contract_ask' => 5.00,
                 'per_play_max_debit' => 75.00,
                 'per_day_max_debit' => 250.00,
+                'daily_gross_entry_debit' => 250.00,
                 'per_underlying_max_debit' => 100.00,
                 'max_open_positions' => 4,
                 'min_quote_fresh_seconds' => 10,
@@ -62,7 +63,9 @@ class OptionRailPipelineTest extends TestCase
             ],
             'session_open' => true,
             'settled_cash' => 245.83,
+            'buying_power' => 245.83,
             'options_spent_today_debit' => 0.0,
+            'options_open_debit' => 0.0,
             'underlying_open_debit' => [],
             'open_option_positions' => [],
             'open_option_orders' => [],
@@ -80,7 +83,7 @@ class OptionRailPipelineTest extends TestCase
             'side' => 'buy',
             'positionEffect' => 'open',
             'quantity' => 1,
-            'limitPrice' => 0.50,
+            'limitPrice' => 0.52,
             'optionId' => 'opt-uuid-1',
             'chainId' => 'chain-uuid-1',
             'source' => 'test',
@@ -158,7 +161,7 @@ class OptionRailPipelineTest extends TestCase
 
     public function test_sell_to_close_passes_strategy_gate(): void
     {
-        $verdict = $this->evaluate($this->intent(['side' => 'sell', 'positionEffect' => 'close']));
+        $verdict = $this->evaluate($this->intent(['side' => 'sell', 'positionEffect' => 'close', 'limitPrice' => 0.48]));
 
         $this->assertSame(OptionRailVerdict::ALLOW, $verdict->verdict(), implode(', ', $verdict->blockReasons()));
     }
@@ -200,6 +203,20 @@ class OptionRailPipelineTest extends TestCase
         $this->assertContains('spread:spread_above_max', $verdict->blockReasons());
     }
 
+    public function test_wide_spread_does_not_block_sell_to_close_at_live_bid(): void
+    {
+        $verdict = $this->evaluate(
+            $this->intent(['side' => 'sell', 'positionEffect' => 'close', 'limitPrice' => 0.06]),
+            ctx: ['quote' => [
+                'bid' => 0.06, 'ask' => 0.08, 'mid' => 0.07, 'spread_bps' => 2857.14, 'age_seconds' => 1.0, 'stale' => false,
+            ]],
+        );
+
+        $this->assertSame(OptionRailVerdict::ALLOW, $verdict->verdict(), implode(', ', $verdict->blockReasons()));
+        $spread = collect($verdict->toArray()['ledger'])->firstWhere('gate', 'spread');
+        $this->assertTrue($spread['detail']['liquidation_bypass'] ?? false);
+    }
+
     public function test_ask_above_max_contract_ask_blocks(): void
     {
         $verdict = $this->evaluate(
@@ -209,6 +226,28 @@ class OptionRailPipelineTest extends TestCase
 
         $this->assertSame(OptionRailPipeline::BLOCK_WIDE_SPREAD, $verdict->verdict());
         $this->assertContains('spread:ask_above_max', $verdict->blockReasons());
+    }
+
+    public function test_buy_limit_below_live_ask_blocks_as_unmarketable(): void
+    {
+        $verdict = $this->evaluate(
+            $this->intent(['limitPrice' => 0.05]),
+            ctx: ['quote' => ['bid' => 4.01, 'ask' => 4.04, 'mid' => 4.025, 'spread_bps' => 75.66, 'age_seconds' => 1.0, 'stale' => false]],
+        );
+
+        $this->assertSame(OptionRailPipeline::BLOCK_PRICE, $verdict->verdict());
+        $this->assertContains('marketability:buy_limit_below_live_ask', $verdict->blockReasons());
+    }
+
+    public function test_sell_limit_above_live_bid_blocks_as_unmarketable(): void
+    {
+        $verdict = $this->evaluate(
+            $this->intent(['side' => 'sell', 'positionEffect' => 'close', 'limitPrice' => 0.60]),
+            ctx: ['quote' => ['bid' => 0.48, 'ask' => 0.52, 'mid' => 0.50, 'spread_bps' => 800.0, 'age_seconds' => 1.0, 'stale' => false]],
+        );
+
+        $this->assertSame(OptionRailPipeline::BLOCK_PRICE, $verdict->verdict());
+        $this->assertContains('marketability:sell_limit_above_live_bid', $verdict->blockReasons());
     }
 
     public function test_oversize_debit_blocks_cap(): void
@@ -224,15 +263,40 @@ class OptionRailPipelineTest extends TestCase
     {
         $verdict = $this->evaluate($this->intent(['limitPrice' => null]));
 
-        $this->assertSame(OptionRailPipeline::BLOCK_CAP, $verdict->verdict());
+        $this->assertSame(OptionRailPipeline::BLOCK_PRICE, $verdict->verdict());
+        $this->assertContains('marketability:limit_price_missing', $verdict->blockReasons());
         $this->assertContains('caps:debit_unbounded_limit_price_required', $verdict->blockReasons());
     }
 
     public function test_per_day_cap_blocks(): void
     {
-        $verdict = $this->evaluate(ctx: ['options_spent_today_debit' => 240.0]);
+        $verdict = $this->evaluate(ctx: ['options_open_debit' => 240.0]);
 
         $this->assertContains('caps:per_day_cap_exceeded', $verdict->blockReasons());
+    }
+
+    public function test_closed_intraday_turnover_does_not_consume_open_exposure_cap(): void
+    {
+        $verdict = $this->evaluate(ctx: [
+            'options_spent_today_debit' => 240.0,
+            'options_open_debit' => 0.0,
+            'underlying_open_debit' => [],
+        ], cfg: ['options' => ['daily_gross_entry_debit' => 500.0]]);
+
+        $this->assertSame(OptionRailVerdict::ALLOW, $verdict->verdict(), implode(', ', $verdict->blockReasons()));
+    }
+
+    public function test_daily_gross_entry_debit_blocks_recycling_after_top_off(): void
+    {
+        $verdict = $this->evaluate(ctx: [
+            'options_spent_today_debit' => 240.0,
+            'options_open_debit' => 0.0,
+            'settled_cash' => 1000.0,
+            'buying_power' => 1000.0,
+        ]);
+
+        $this->assertSame(OptionRailPipeline::BLOCK_CAP, $verdict->verdict());
+        $this->assertContains('caps:daily_gross_entry_debit_exceeded', $verdict->blockReasons());
     }
 
     public function test_per_underlying_cap_blocks(): void
@@ -255,6 +319,18 @@ class OptionRailPipelineTest extends TestCase
 
         $this->assertSame(OptionRailPipeline::BLOCK_CAP, $verdict->verdict());
         $this->assertContains('caps:settled_cash_unverified', $verdict->blockReasons());
+    }
+
+    public function test_insufficient_buying_power_blocks_cap(): void
+    {
+        $verdict = $this->evaluate(ctx: ['buying_power' => 20.0]);
+
+        $this->assertSame(OptionRailPipeline::BLOCK_CAP, $verdict->verdict());
+        $this->assertContains('caps:buying_power_insufficient', $verdict->blockReasons());
+        $this->assertSame([
+            'buying_power' => 20.0,
+            'debit' => 52.0,
+        ], $verdict->results[8]->detail);
     }
 
     public function test_duplicate_open_order_for_same_option_blocks(): void
@@ -313,6 +389,9 @@ class OptionRailPipelineTest extends TestCase
         $zeroDay = $this->evaluate(cfg: ['options' => ['per_day_max_debit' => 0]]);
         $this->assertContains('caps:per_day_cap_unconfigured', $zeroDay->blockReasons());
 
+        $zeroGross = $this->evaluate(cfg: ['options' => ['daily_gross_entry_debit' => 0]]);
+        $this->assertContains('caps:daily_gross_entry_debit_unconfigured', $zeroGross->blockReasons());
+
         $zeroUnderlying = $this->evaluate(cfg: ['options' => ['per_underlying_max_debit' => 0]]);
         $this->assertContains('caps:per_underlying_cap_unconfigured', $zeroUnderlying->blockReasons());
 
@@ -324,7 +403,7 @@ class OptionRailPipelineTest extends TestCase
     {
         // A sell-to-close at max positions must still be allowed (it reduces).
         $verdict = $this->evaluate(
-            $this->intent(['side' => 'sell', 'positionEffect' => 'close']),
+            $this->intent(['side' => 'sell', 'positionEffect' => 'close', 'limitPrice' => 0.48]),
             ctx: ['open_option_positions' => [1, 2, 3, 4]],
         );
 
@@ -399,7 +478,7 @@ class OptionRailPipelineTest extends TestCase
     {
         $verdict = $this->evaluate(cfg: ['kill_switch' => true], ctx: ['settled_cash' => null]);
 
-        $this->assertCount(10, $verdict->results);
+        $this->assertCount(11, $verdict->results);
         $this->assertGreaterThanOrEqual(2, count($verdict->blockReasons()));
         $this->assertSame(OptionRailPipeline::BLOCK_KILL_SWITCH, $verdict->verdict(), 'verdict is the FIRST block category');
     }

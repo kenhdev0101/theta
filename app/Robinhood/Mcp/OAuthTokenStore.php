@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\Crypt;
  */
 final class OAuthTokenStore
 {
+    private ?array $cachedGrant = null;
+
+    private bool $grantLoaded = false;
+
     public function __construct(
         private readonly string $path,
         private readonly ?string $envToken = null,
@@ -39,17 +43,28 @@ final class OAuthTokenStore
 
         file_put_contents($this->path, Crypt::encryptString((string) json_encode($grant)), LOCK_EX);
         @chmod($this->path, 0600);
+
+        $this->cachedGrant = $grant;
+        $this->grantLoaded = true;
     }
 
     public function get(): ?array
     {
+        if ($this->grantLoaded) {
+            return $this->cachedGrant;
+        }
+
+        $this->grantLoaded = true;
+
         if (! is_file($this->path)) {
             return null;
         }
 
         $decrypted = Crypt::decryptString((string) file_get_contents($this->path));
 
-        return json_decode($decrypted, true) ?: null;
+        $this->cachedGrant = json_decode($decrypted, true) ?: null;
+
+        return $this->cachedGrant;
     }
 
     public function accessToken(): ?string

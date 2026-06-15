@@ -71,7 +71,15 @@ class OptionExecutorPlacementTest extends TestCase
                         'option ref_id must be persisted BEFORE the broker place call',
                     );
 
-                    return $this->toolResponse($payload['id'], ['order_id' => 'opt-broker-1', 'state' => 'queued', 'ref_id' => $refId]);
+                    return $this->toolResponse($payload['id'], [
+                        'data' => [
+                            'order' => [
+                                'id' => 'opt-broker-1',
+                                'state' => 'queued',
+                                'ref_id' => $refId,
+                            ],
+                        ],
+                    ]);
                 }
 
                 return $this->toolResponse($payload['id'], ['ok' => true]);
@@ -131,10 +139,12 @@ class OptionExecutorPlacementTest extends TestCase
             'account' => ['account_number' => config('harness.agentic_account'), 'option_level' => 'option_level_2', 'agentic_allowed' => true],
             'capability_tools' => (array) config('harness.options.required_tools'),
             'contract' => ['option_id' => 'opt-uuid-1', 'chain_id' => 'chain-uuid-1', 'tradability' => 'tradable', 'state' => 'active'],
-            'quote' => ['bid' => 0.48, 'ask' => 0.52, 'mid' => 0.50, 'spread_bps' => 800.0, 'age_seconds' => 2.0, 'stale' => false],
+            'quote' => ['bid' => 0.48, 'ask' => 0.50, 'mid' => 0.49, 'spread_bps' => 408.0, 'age_seconds' => 2.0, 'stale' => false],
             'session_open' => true,
             'settled_cash' => 245.83,
+            'buying_power' => 245.83,
             'options_spent_today_debit' => 0.0,
+            'options_open_debit' => 0.0,
             'underlying_open_debit' => [],
             'open_option_positions' => [],
             'open_option_orders' => [],
@@ -167,6 +177,7 @@ class OptionExecutorPlacementTest extends TestCase
         $journal = RobinhoodTradeJournal::sole();
         $this->assertSame('option', $journal->asset_class);
         $this->assertSame('submitted', $journal->status);
+        $this->assertSame('opt-broker-1', $journal->broker_order_id);
         $this->assertSame('open', $journal->position_effect);
         $this->assertSame('chain-uuid-1', $journal->chain_id);
         $this->assertSame('long_call', $journal->intent);
@@ -186,7 +197,7 @@ class OptionExecutorPlacementTest extends TestCase
         $this->fakeMcp();
 
         $this->executor()->execute(
-            $this->intent(['side' => 'sell', 'positionEffect' => 'close']),
+            $this->intent(['side' => 'sell', 'positionEffect' => 'close', 'limitPrice' => 0.48]),
             $this->greenContext(),
         );
 

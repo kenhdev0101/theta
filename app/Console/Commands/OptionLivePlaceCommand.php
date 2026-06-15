@@ -17,8 +17,8 @@ use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Console\Command;
 
 /**
- * LIVE option placement — the only command wired to place_option_order.
- * Requires explicit operator invocation with full contract parameters.
+ * LIVE option placement for one explicit contract. Scheduled autopilot uses
+ * the same executor after loading complete intents from the journal.
  * Runs the complete spine: resolve -> rails -> persisted ref -> review ->
  * full rails -> place -> journal.
  */

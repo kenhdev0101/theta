@@ -61,6 +61,63 @@ class AlpacaMarketDataClient
         ]);
     }
 
+    public function recentBars(string $symbol, int $limit = 30, string $timeframe = '1Min'): array
+    {
+        $symbol = strtoupper($symbol);
+        $end = now();
+        $start = $end->copy()->subMinutes(max(5, $limit + 5));
+        $payload = $this->get("/v2/stocks/{$symbol}/bars", [
+            'feed' => $this->feed(),
+            'timeframe' => $timeframe,
+            'limit' => max(1, $limit),
+            'sort' => 'asc',
+            'start' => $start->toIso8601ZuluString('microsecond'),
+            'end' => $end->toIso8601ZuluString('microsecond'),
+        ]);
+
+        $bars = [];
+        foreach ((array) ($payload['bars'] ?? []) as $bar) {
+            if (! is_array($bar)) {
+                continue;
+            }
+
+            $bars[] = $this->withFreshness([
+                'symbol' => $symbol,
+                'open' => $bar['o'] ?? null,
+                'high' => $bar['h'] ?? null,
+                'low' => $bar['l'] ?? null,
+                'close' => $bar['c'] ?? null,
+                'volume' => $bar['v'] ?? null,
+                'source_ts' => $bar['t'] ?? null,
+                'raw' => $bar,
+            ]);
+        }
+
+        try {
+            $latest = $this->latestBar($symbol);
+            if (is_numeric($latest['close'] ?? null) && ! empty($latest['source_ts'])) {
+                $latestTs = Carbon::parse((string) $latest['source_ts']);
+                $lastTs = $bars === [] ? null : Carbon::parse((string) ($bars[array_key_last($bars)]['source_ts'] ?? ''));
+                if ($lastTs === null || $latestTs->greaterThan($lastTs)) {
+                    $bars[] = $latest;
+                }
+            }
+        } catch (\Throwable) {
+            // The bounded bars response is still useful; callers decide
+            // freshness. latestBar is an improvement, not a hard dependency.
+        }
+
+        return [
+            'symbol' => $symbol,
+            'timeframe' => $timeframe,
+            'limit' => max(1, $limit),
+            'feed' => $this->feed(),
+            'fetched_at' => now()->toIso8601ZuluString('microsecond'),
+            'latency_ms' => $payload['_latency_ms'] ?? null,
+            'bars' => $bars,
+        ];
+    }
+
     public function snapshot(string $symbol): array
     {
         $symbol = strtoupper($symbol);

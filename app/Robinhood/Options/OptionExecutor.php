@@ -43,7 +43,7 @@ final class OptionExecutor
         ]), includeReview: false);
 
         if (! $preVerdict->allowed()) {
-            return $this->abort($intent, $preVerdict, refRow: null);
+            return $this->abort($intent, $preVerdict, refRow: null, journalId: $this->contextJournalId($context));
         }
 
         // Idempotency ref is durable BEFORE any broker write-path call.
@@ -64,7 +64,7 @@ final class OptionExecutor
         $verdict = $this->rails->evaluate($intent, $this->cfg, $context);
 
         if (! $verdict->allowed()) {
-            return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null);
+            return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
         }
 
         $payload = $this->placePayload($intent);
@@ -76,7 +76,7 @@ final class OptionExecutor
             $this->journal($intent, $ref->client_ref_id, 'rejected', [
                 'rail_verdict' => $verdict->toArray(),
                 'placement_error' => $e->getMessage(),
-            ]);
+            ], journalId: $this->contextJournalId($context));
             $this->telemetry->record('options_execution', [
                 'event' => 'place_failed',
                 'client_ref_id' => $ref->client_ref_id,
@@ -87,7 +87,7 @@ final class OptionExecutor
             throw $e;
         }
 
-        $brokerOrderId = $placement['order_id'] ?? $placement['id'] ?? null;
+        $brokerOrderId = $this->brokerOrderId($placement);
         $this->refs->markPlaced($ref, is_string($brokerOrderId) ? $brokerOrderId : null);
 
         $journal = $this->journal($intent, $ref->client_ref_id, 'submitted', [
@@ -97,7 +97,7 @@ final class OptionExecutor
             'submitted_at' => now(),
             'review_payload' => is_array($context['review'] ?? null) ? $context['review'] : null,
             'broker_payload' => ['placement' => $placement, 'dry_run' => false],
-        ]);
+        ], $this->contextJournalId($context));
 
         $this->telemetry->record('options_execution', [
             'event' => 'placed',
@@ -115,6 +115,16 @@ final class OptionExecutor
             'journal_id' => $journal->id,
             'placement' => $placement,
         ];
+    }
+
+    private function brokerOrderId(array $placement): ?string
+    {
+        $brokerOrderId = $placement['order_id']
+            ?? $placement['id']
+            ?? $placement['data']['order']['id']
+            ?? null;
+
+        return is_string($brokerOrderId) && $brokerOrderId !== '' ? $brokerOrderId : null;
     }
 
     /** Wire payload pinned to the live-measured place_option_order schema. */
@@ -159,16 +169,16 @@ final class OptionExecutor
         }
     }
 
-    private function abort(OptionOrderIntent $intent, OptionRailVerdict $verdict, ?string $refRow, ?array $review = null): array
+    private function abort(OptionOrderIntent $intent, OptionRailVerdict $verdict, ?string $refRow, ?array $review = null, ?int $journalId = null): array
     {
-        $journalId = null;
+        $recordedJournalId = $journalId;
         if ($refRow !== null) {
             $journal = $this->journal($intent, $refRow, 'risk_aborted', [
                 'rail_verdict' => $verdict->toArray(),
             ], [
                 'review_payload' => $review,
-            ]);
-            $journalId = $journal->id;
+            ], $journalId);
+            $recordedJournalId = $journal->id;
         }
 
         $this->telemetry->record('options_execution', [
@@ -178,14 +188,14 @@ final class OptionExecutor
             'client_ref_id' => $refRow,
             'contract' => $intent->contractLabel(),
             'block_reasons' => $verdict->blockReasons(),
-            'journal_id' => $journalId,
+            'journal_id' => $recordedJournalId,
         ]);
 
         return [
             'classification' => 'LIVE_RISK_ABORTED',
             'verdict' => $verdict,
             'ref' => null,
-            'journal_id' => $journalId,
+            'journal_id' => $recordedJournalId,
             'placement' => null,
         ];
     }
@@ -199,37 +209,64 @@ final class OptionExecutor
         return null;
     }
 
-    private function journal(OptionOrderIntent $intent, string $clientRefId, string $status, array $notes, array $extra = []): RobinhoodTradeJournal
+    private function contextJournalId(array $context): ?int
     {
-        return RobinhoodTradeJournal::query()->updateOrCreate(
-            ['client_ref_id' => $clientRefId],
-            array_merge([
-                'account_number' => (string) ($this->cfg['agentic_account'] ?? ''),
-                'asset_class' => 'option',
-                'symbol' => strtoupper($intent->underlyingSymbol),
-                'underlying_symbol' => strtoupper($intent->underlyingSymbol),
-                'option_id' => $intent->optionId,
-                'chain_id' => $intent->chainId,
-                'option_type' => $intent->optionType,
-                'expiration_date' => $intent->expirationDate,
-                'strike_price' => $intent->strikePrice,
-                'position_effect' => $intent->positionEffect,
-                'status' => $status,
-                'intent' => $intent->isOpening()
-                    ? ($intent->optionType === 'call' ? 'long_call' : 'long_put')
-                    : ($intent->optionType === 'call' ? 'close_long_call' : 'close_long_put'),
-                'side' => $intent->side,
-                'order_type' => $intent->orderType,
-                'time_in_force' => $intent->timeInForce,
-                'market_hours' => $intent->marketHours,
-                'quantity' => $intent->quantity,
-                'limit_price' => $intent->limitPrice,
-                'dollar_amount' => $intent->estimatedDebit(),
-                'strategy_label' => 'theta_option_single_leg',
-                'structure_class' => 'single_leg_long',
-                'scanner_payload' => ['intent_source' => $intent->source],
-                'notes' => $notes,
-            ], $extra),
-        );
+        $journalId = $context['journal_id'] ?? null;
+
+        return is_numeric($journalId) ? (int) $journalId : null;
+    }
+
+    private function journal(OptionOrderIntent $intent, string $clientRefId, string $status, array $notes, array $extra = [], ?int $journalId = null): RobinhoodTradeJournal
+    {
+        $values = array_merge([
+            'account_number' => (string) ($this->cfg['agentic_account'] ?? ''),
+            'asset_class' => 'option',
+            'symbol' => strtoupper($intent->underlyingSymbol),
+            'underlying_symbol' => strtoupper($intent->underlyingSymbol),
+            'option_id' => $intent->optionId,
+            'chain_id' => $intent->chainId,
+            'option_type' => $intent->optionType,
+            'expiration_date' => $intent->expirationDate,
+            'strike_price' => $intent->strikePrice,
+            'position_effect' => $intent->positionEffect,
+            'status' => $status,
+            'intent' => $intent->isOpening()
+                ? ($intent->optionType === 'call' ? 'long_call' : 'long_put')
+                : ($intent->optionType === 'call' ? 'close_long_call' : 'close_long_put'),
+            'side' => $intent->side,
+            'order_type' => $intent->orderType,
+            'time_in_force' => $intent->timeInForce,
+            'market_hours' => $intent->marketHours,
+            'client_ref_id' => $clientRefId,
+            'quantity' => $intent->quantity,
+            'limit_price' => $intent->limitPrice,
+            'dollar_amount' => $intent->estimatedDebit(),
+            'strategy_label' => 'theta_option_single_leg',
+            'structure_class' => 'single_leg_long',
+            'scanner_payload' => ['intent_source' => $intent->source],
+            'notes' => $notes,
+        ], $extra);
+
+        if ($journalId !== null) {
+            $journal = RobinhoodTradeJournal::query()->find($journalId);
+            if ($journal instanceof RobinhoodTradeJournal) {
+                if (isset($values['notes']) && is_array($values['notes'])) {
+                    $values['notes'] = array_merge((array) ($journal->notes ?? []), $values['notes']);
+                }
+                if (isset($values['scanner_payload']) && is_array($values['scanner_payload'])) {
+                    $executionSource = $values['scanner_payload']['intent_source'] ?? null;
+                    unset($values['scanner_payload']['intent_source']);
+                    $values['scanner_payload'] = array_merge((array) ($journal->scanner_payload ?? []), $values['scanner_payload']);
+                    if (is_string($executionSource) && $executionSource !== '') {
+                        $values['scanner_payload']['execution_intent_source'] = $executionSource;
+                    }
+                }
+                $journal->forceFill($values)->save();
+
+                return $journal->refresh();
+            }
+        }
+
+        return RobinhoodTradeJournal::query()->updateOrCreate(['client_ref_id' => $clientRefId], $values);
     }
 }

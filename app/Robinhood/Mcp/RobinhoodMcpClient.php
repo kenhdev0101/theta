@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Robinhood\Mcp;
 
 use App\Robinhood\Telemetry\JsonlRecorder;
+use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 /**
@@ -16,10 +17,17 @@ use InvalidArgumentException;
  */
 class RobinhoodMcpClient
 {
+    private ?array $cachedTools = null;
+
+    private ?array $cachedAccountCapability = null;
+
+    private bool $accountCapabilityLoaded = false;
+
     public function __construct(
         private readonly McpTransport $transport,
         private readonly string $agenticAccount,
         private readonly ?JsonlRecorder $telemetry = null,
+        private readonly int $optionMetadataCacheSeconds = 0,
     ) {
         if ($this->agenticAccount === '') {
             throw new InvalidArgumentException('agentic account pin is empty — refusing to construct an unpinned broker client');
@@ -32,16 +40,18 @@ class RobinhoodMcpClient
             transport: new McpTransport(
                 endpoint: (string) ($cfg['mcp_endpoint'] ?? ''),
                 tokens: OAuthTokenStore::fromConfig($cfg),
+                credits: BrokerCreditLimiter::fromConfig($cfg),
             ),
             agenticAccount: (string) ($cfg['agentic_account'] ?? ''),
             telemetry: $telemetry,
+            optionMetadataCacheSeconds: max(0, (int) data_get($cfg, 'options.metadata_cache_seconds', 0)),
         );
     }
 
     /** Broker capability read — the advertised tool surface (options-lane activation signal). */
     public function listTools(): array
     {
-        return $this->transport->listTools();
+        return $this->cachedTools ??= $this->transport->listTools();
     }
 
     /** Broker-truth session clock. */
@@ -105,9 +115,11 @@ class RobinhoodMcpClient
 
     public function getOptionChains(string $underlyingSymbol): array
     {
-        return $this->call('get_option_chains', [
+        $arguments = [
             'underlying_symbol' => strtoupper($underlyingSymbol),
-        ]);
+        ];
+
+        return $this->cachedOptionMetadata('get_option_chains', $arguments);
     }
 
     /**
@@ -117,7 +129,7 @@ class RobinhoodMcpClient
     {
         $allowed = ['chain_id', 'chain_symbol', 'expiration_dates', 'strike_price', 'type', 'state', 'tradability', 'ids', 'cursor'];
 
-        return $this->call('get_option_instruments', array_intersect_key($filters, array_flip($allowed)));
+        return $this->cachedOptionMetadata('get_option_instruments', array_intersect_key($filters, array_flip($allowed)));
     }
 
     /** @param list<string> $instrumentIds max 20 for close data per broker guide */
@@ -177,6 +189,11 @@ class RobinhoodMcpClient
      */
     public function getAccountCapability(): ?array
     {
+        if ($this->accountCapabilityLoaded) {
+            return $this->cachedAccountCapability;
+        }
+
+        $this->accountCapabilityLoaded = true;
         $payload = $this->call('get_accounts', []);
 
         foreach (PortfolioReader::listFrom($payload, ['accounts', 'results']) as $account) {
@@ -184,13 +201,15 @@ class RobinhoodMcpClient
                 continue;
             }
 
-            return [
+            $this->cachedAccountCapability = [
                 'account_number' => $this->agenticAccount,
                 'type' => $account['type'] ?? $account['brokerage_account_type'] ?? null,
                 'option_level' => $account['option_level'] ?? null,
                 'agentic_allowed' => $account['agentic_allowed'] ?? null,
                 'nickname' => $account['nickname'] ?? null,
             ];
+
+            return $this->cachedAccountCapability;
         }
 
         return null;
@@ -246,6 +265,18 @@ class RobinhoodMcpClient
 
             throw $e;
         }
+    }
+
+    private function cachedOptionMetadata(string $tool, array $arguments): array
+    {
+        if ($this->optionMetadataCacheSeconds <= 0) {
+            return $this->call($tool, $arguments);
+        }
+
+        ksort($arguments);
+        $key = 'theta:robinhood:mcp:option_metadata:'.$tool.':'.sha1(json_encode($arguments, JSON_THROW_ON_ERROR));
+
+        return Cache::remember($key, now()->addSeconds($this->optionMetadataCacheSeconds), fn (): array => $this->call($tool, $arguments));
     }
 
     private function stamp(string $tool, array $arguments, bool $ok, float $startedAt, ?string $error = null): void

@@ -339,7 +339,7 @@ sell-to-close long calls and long puts
 no spreads, covered calls, cash-secured puts, short/naked options, or multi-leg
 deterministic resolver chooses the contract; the model never does
 review probes (theta:option-review-probe) are allowed any time
-live placement only via explicit operator invocation of theta:option-live-place
+live placement via scheduled theta:option-autopilot or explicit theta:option-live-place
 broker truth remains the source of truth
 ```
 

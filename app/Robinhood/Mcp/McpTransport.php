@@ -28,6 +28,7 @@ class McpTransport
     public function __construct(
         private readonly string $endpoint,
         private readonly OAuthTokenStore $tokens,
+        private readonly ?BrokerCreditLimiter $credits = null,
         private readonly int $timeoutSeconds = 30,
         private readonly int $connectRetries = 2,
     ) {}
@@ -173,19 +174,31 @@ class McpTransport
 
     private function send(string $token, array $payload): Response
     {
-        $request = Http::withToken($token)
-            ->withHeaders(array_filter([
-                'Accept' => 'application/json, text/event-stream',
-                'Mcp-Session-Id' => $this->sessionId,
-            ]))
-            ->timeout($this->timeoutSeconds)
-            ->retry($this->connectRetries, 250, throw: false);
+        $operation = (string) ($payload['method'] ?? 'unknown');
+        $attempts = max(1, $this->connectRetries + 1);
+        $response = null;
 
-        $response = $request->post($this->endpoint, $payload);
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            $this->credits?->acquire($operation);
 
-        if ($response->failed()) {
+            $response = Http::withToken($token)
+                ->withHeaders(array_filter([
+                    'Accept' => 'application/json, text/event-stream',
+                    'Mcp-Session-Id' => $this->sessionId,
+                ]))
+                ->timeout($this->timeoutSeconds)
+                ->post($this->endpoint, $payload);
+
+            if (! $response->failed() || $attempt === $attempts) {
+                break;
+            }
+
+            usleep(250_000);
+        }
+
+        if ($response === null || $response->failed()) {
             throw new RuntimeException(
-                "mcp transport failure: HTTP {$response->status()} from {$this->endpoint}"
+                'mcp transport failure: HTTP '.($response?->status() ?? 'none')." from {$this->endpoint}"
             );
         }
 

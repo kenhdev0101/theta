@@ -19,6 +19,7 @@ namespace App\Robinhood\Options;
  *   quote              resolver quote block (bid, ask, spread_bps, stale)
  *   session_open       bool|null
  *   settled_cash       float|null
+ *   buying_power       float|null
  *   options_spent_today_debit  float|null
  *   underlying_open_debit      map SYMBOL -> open option debit
  *   open_option_positions      list (open positions)
@@ -37,6 +38,8 @@ final class OptionRailPipeline
     public const BLOCK_STALE_QUOTE = 'BLOCK_STALE_QUOTE';
 
     public const BLOCK_WIDE_SPREAD = 'BLOCK_WIDE_SPREAD';
+
+    public const BLOCK_PRICE = 'BLOCK_PRICE';
 
     public const BLOCK_CAP = 'BLOCK_CAP';
 
@@ -66,7 +69,8 @@ final class OptionRailPipeline
             $this->strategyGate($intent),
             $this->sessionGate($intent, $context),
             $this->quoteFreshnessGate($cfg, $context),
-            $this->spreadGate($cfg, $context),
+            $this->spreadGate($intent, $cfg, $context),
+            $this->marketabilityGate($intent, $context),
             $this->capsGate($intent, $cfg, $context),
             $this->duplicateGate($intent, $context),
         ];
@@ -223,16 +227,31 @@ final class OptionRailPipeline
         return OptionGateResult::allow('quote_freshness', ['age_seconds' => $age]);
     }
 
-    private function spreadGate(array $cfg, array $context): OptionGateResult
+    private function spreadGate(OptionOrderIntent $intent, array $cfg, array $context): OptionGateResult
     {
         $quote = $context['quote'] ?? null;
         if (! is_array($quote) || ($quote['spread_bps'] ?? null) === null) {
+            if ($intent->side === 'sell' && $intent->positionEffect === 'close') {
+                return OptionGateResult::allow('spread', [
+                    'spread_bps' => $quote['spread_bps'] ?? null,
+                    'liquidation_bypass' => true,
+                ]);
+            }
+
             return OptionGateResult::block('spread', self::BLOCK_WIDE_SPREAD, 'spread_unverified');
         }
 
         $options = (array) ($cfg['options'] ?? []);
         $maxSpreadBps = (float) ($options['max_spread_bps'] ?? 1500);
         if ((float) $quote['spread_bps'] > $maxSpreadBps) {
+            if ($intent->side === 'sell' && $intent->positionEffect === 'close') {
+                return OptionGateResult::allow('spread', [
+                    'spread_bps' => $quote['spread_bps'],
+                    'max_spread_bps' => $maxSpreadBps,
+                    'liquidation_bypass' => true,
+                ]);
+            }
+
             return OptionGateResult::block('spread', self::BLOCK_WIDE_SPREAD, 'spread_above_max', [
                 'spread_bps' => $quote['spread_bps'],
                 'max_spread_bps' => $maxSpreadBps,
@@ -241,6 +260,15 @@ final class OptionRailPipeline
 
         $maxAsk = (float) ($options['max_contract_ask'] ?? 5.0);
         if (($quote['ask'] ?? null) !== null && (float) $quote['ask'] > $maxAsk) {
+            if ($intent->side === 'sell' && $intent->positionEffect === 'close') {
+                return OptionGateResult::allow('spread', [
+                    'ask' => $quote['ask'],
+                    'max_contract_ask' => $maxAsk,
+                    'spread_bps' => $quote['spread_bps'],
+                    'liquidation_bypass' => true,
+                ]);
+            }
+
             return OptionGateResult::block('spread', self::BLOCK_WIDE_SPREAD, 'ask_above_max', [
                 'ask' => $quote['ask'],
                 'max_contract_ask' => $maxAsk,
@@ -248,6 +276,56 @@ final class OptionRailPipeline
         }
 
         return OptionGateResult::allow('spread', ['spread_bps' => $quote['spread_bps']]);
+    }
+
+    private function marketabilityGate(OptionOrderIntent $intent, array $context): OptionGateResult
+    {
+        if ($intent->orderType !== 'limit') {
+            return OptionGateResult::allow('marketability', ['order_type' => $intent->orderType]);
+        }
+
+        if ($intent->limitPrice === null) {
+            return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'limit_price_missing');
+        }
+
+        $quote = $context['quote'] ?? null;
+        if (! is_array($quote)) {
+            return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'quote_unverified');
+        }
+
+        $limit = (float) $intent->limitPrice;
+        $bid = isset($quote['bid']) ? (float) $quote['bid'] : null;
+        $ask = isset($quote['ask']) ? (float) $quote['ask'] : null;
+
+        if ($intent->side === 'buy') {
+            if ($ask === null || $ask <= 0.0) {
+                return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'ask_unverified');
+            }
+            if ($limit + 0.000001 < $ask) {
+                return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'buy_limit_below_live_ask', [
+                    'limit_price' => $limit,
+                    'ask' => $ask,
+                ]);
+            }
+        }
+
+        if ($intent->side === 'sell') {
+            if ($bid === null || $bid <= 0.0) {
+                return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'bid_unverified');
+            }
+            if ($limit - 0.000001 > $bid) {
+                return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'sell_limit_above_live_bid', [
+                    'limit_price' => $limit,
+                    'bid' => $bid,
+                ]);
+            }
+        }
+
+        return OptionGateResult::allow('marketability', [
+            'limit_price' => $limit,
+            'bid' => $bid,
+            'ask' => $ask,
+        ]);
     }
 
     private function capsGate(OptionOrderIntent $intent, array $cfg, array $context): OptionGateResult
@@ -274,21 +352,41 @@ final class OptionRailPipeline
             ]);
         }
 
-        $spentToday = $context['options_spent_today_debit'] ?? null;
-        if ($spentToday === null) {
-            return OptionGateResult::block('caps', self::BLOCK_CAP, 'options_spent_today_unverified');
-        }
         // Every cap is mandatory for opens: an unconfigured cap blocks
         // (fail closed), it never silently skips.
         $perDay = (float) ($options['per_day_max_debit'] ?? 0.0);
         if ($perDay <= 0) {
             return OptionGateResult::block('caps', self::BLOCK_CAP, 'per_day_cap_unconfigured');
         }
-        if ((float) $spentToday + $debit > $perDay) {
+        $openDebit = $context['options_open_debit'] ?? null;
+        if ($openDebit === null) {
+            $underlyingDebitsForTotal = $context['underlying_open_debit'] ?? null;
+            $openDebit = is_array($underlyingDebitsForTotal) ? array_sum($underlyingDebitsForTotal) : null;
+        }
+        if ($openDebit === null) {
+            return OptionGateResult::block('caps', self::BLOCK_CAP, 'options_open_debit_unverified');
+        }
+        if ((float) $openDebit + $debit > $perDay) {
             return OptionGateResult::block('caps', self::BLOCK_CAP, 'per_day_cap_exceeded', [
-                'spent_today' => $spentToday,
+                'open_debit' => $openDebit,
                 'debit' => $debit,
                 'per_day_max_debit' => $perDay,
+            ]);
+        }
+
+        $dailyGross = (float) ($options['daily_gross_entry_debit'] ?? 0.0);
+        if ($dailyGross <= 0) {
+            return OptionGateResult::block('caps', self::BLOCK_CAP, 'daily_gross_entry_debit_unconfigured');
+        }
+        $spentToday = $context['options_spent_today_debit'] ?? null;
+        if ($spentToday === null) {
+            return OptionGateResult::block('caps', self::BLOCK_CAP, 'options_spent_today_unverified');
+        }
+        if ((float) $spentToday + $debit > $dailyGross) {
+            return OptionGateResult::block('caps', self::BLOCK_CAP, 'daily_gross_entry_debit_exceeded', [
+                'spent_today_debit' => $spentToday,
+                'debit' => $debit,
+                'daily_gross_entry_debit' => $dailyGross,
             ]);
         }
 
@@ -337,7 +435,22 @@ final class OptionRailPipeline
             ]);
         }
 
-        return OptionGateResult::allow('caps', ['debit' => $debit]);
+        $buyingPower = $context['buying_power'] ?? null;
+        if ($buyingPower === null) {
+            return OptionGateResult::block('caps', self::BLOCK_CAP, 'buying_power_unverified');
+        }
+        if ($debit > (float) $buyingPower) {
+            return OptionGateResult::block('caps', self::BLOCK_CAP, 'buying_power_insufficient', [
+                'buying_power' => $buyingPower,
+                'debit' => $debit,
+            ]);
+        }
+
+        return OptionGateResult::allow('caps', [
+            'debit' => $debit,
+            'settled_cash' => $settledCash,
+            'buying_power' => $buyingPower,
+        ]);
     }
 
     private function duplicateGate(OptionOrderIntent $intent, array $context): OptionGateResult

@@ -19,8 +19,9 @@ review/place) → option reconciliation against `get_option_orders` /
 Live scope is single-leg Level 2 only: buy-to-open long calls/puts and
 sell-to-close. No spreads, covered calls, cash-secured puts, short/naked
 options, or multi-leg structures. Review probes are allowed any time;
-placement happens only via explicit operator invocation of
-`theta:option-live-place`. Broker truth remains the source of truth.
+scheduled `theta:option-autopilot` consumes complete reviewed journal intents,
+and explicit `theta:option-live-place` remains available for one-off orders.
+Broker truth remains the source of truth.
 
 `add_option_to_watchlist` requires contract UUIDs from
 `get_option_instruments` (now live); legacy `broker_capability_pending` rows

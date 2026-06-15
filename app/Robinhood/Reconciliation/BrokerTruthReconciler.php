@@ -188,8 +188,26 @@ final class BrokerTruthReconciler
      */
     private function normalizeOptionRow(array $row): array
     {
-        $row['filled_quantity'] = $this->numeric($row, ['processed_quantity', 'filled_quantity', 'filled_qty', 'cumulative_quantity']);
-        $row['average_fill_price'] = $this->numeric($row, ['average_price', 'processed_premium_per_contract', 'average_fill_price', 'fill_price', 'premium']);
+        $filledQuantity = $this->numeric($row, ['processed_quantity', 'filled_quantity', 'filled_qty', 'cumulative_quantity']);
+        $averageFillPrice = $this->numeric($row, ['average_price', 'processed_premium_per_contract', 'average_fill_price', 'fill_price']);
+
+        if ($averageFillPrice <= 0.0) {
+            $execution = $this->firstLeg($row)['executions'][0] ?? null;
+            if (is_array($execution)) {
+                $averageFillPrice = $this->numeric($execution, ['price']);
+            }
+        }
+
+        if ($averageFillPrice <= 0.0 && $filledQuantity > 0.0) {
+            $premium = $this->numeric($row, ['processed_premium', 'premium']);
+            $multiplier = $this->numeric($row, ['trade_value_multiplier']);
+            if ($premium > 0.0 && $multiplier > 0.0) {
+                $averageFillPrice = round($premium / ($filledQuantity * $multiplier), 8);
+            }
+        }
+
+        $row['filled_quantity'] = $filledQuantity;
+        $row['average_fill_price'] = $averageFillPrice;
 
         return $row;
     }

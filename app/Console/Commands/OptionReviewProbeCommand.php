@@ -20,7 +20,7 @@ use Illuminate\Console\Command;
 /**
  * REVIEW-ONLY probe: resolve -> rails -> review_option_order -> full rail
  * verdict. This command has no code path to place_option_order; live
- * placement is theta:option-live-place and requires explicit invocation.
+ * placement is handled by theta:option-live-place or scheduled autopilot.
  */
 class OptionReviewProbeCommand extends Command
 {
@@ -129,6 +129,8 @@ class OptionReviewProbeCommand extends Command
             ),
         );
 
+        $status = $verdict->allowed() ? 'reviewed' : 'risk_aborted';
+
         $journal = RobinhoodTradeJournal::query()->create([
             'account_number' => (string) $cfg['agentic_account'],
             'asset_class' => 'option',
@@ -140,7 +142,7 @@ class OptionReviewProbeCommand extends Command
             'expiration_date' => $expiration,
             'strike_price' => (float) $strike,
             'position_effect' => $intent->positionEffect,
-            'status' => 'reviewed',
+            'status' => $status,
             'intent' => $intent->isOpening() ? ($type === 'call' ? 'long_call' : 'long_put') : ($type === 'call' ? 'close_long_call' : 'close_long_put'),
             'side' => $side,
             'order_type' => 'limit',
@@ -149,7 +151,7 @@ class OptionReviewProbeCommand extends Command
             'dollar_amount' => $intent->estimatedDebit(),
             'strategy_label' => 'theta_option_single_leg',
             'structure_class' => 'single_leg_long',
-            'reviewed_at' => now(),
+            'reviewed_at' => $verdict->allowed() ? now() : null,
             'review_payload' => $review,
             'scanner_payload' => ['intent_source' => 'theta:option-review-probe', 'quote' => $resolution['quote']],
             'notes' => ['rail_verdict' => $verdict->toArray(), 'probe' => 'review_only'],
@@ -165,7 +167,11 @@ class OptionReviewProbeCommand extends Command
             'placed' => false,
         ]);
 
-        $this->line("journal_id: {$journal->id} (status=reviewed; placement requires theta:option-live-place)");
+        $eligibility = $verdict->allowed()
+            ? 'eligible for scheduled autopilot'
+            : 'not eligible for scheduled autopilot';
+
+        $this->line("journal_id: {$journal->id} (status={$status}; {$eligibility})");
 
         return self::SUCCESS;
     }
