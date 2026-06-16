@@ -227,6 +227,7 @@ final class Lexicon
         'momentum_signal_absent' => ['No momentum', 'No qualifying momentum signal this cycle.', self::TONE_NEUTRAL],
         'broker_truth_blocker' => ['Broker read blocked', 'A broker-truth read was blocked.', self::TONE_WARN],
         'entry_symbol_cooldown' => ['Symbol cooldown', 'This symbol is in its post-entry cooldown.', self::TONE_NEUTRAL],
+        'reentry_after_exit_cooldown' => ['Re-entry cooldown', 'A position in this name closed recently; re-entry is paused to prevent open→close→reopen churn.', self::TONE_NEUTRAL],
         'no_marketable_contract' => ['No marketable contract', 'No contract passed the marketability filter.', self::TONE_NEUTRAL],
         'allocation_expected_gain_below_min' => ['Expected gain low', 'Expected gain is below the allocation minimum.', self::TONE_NEUTRAL],
         'review_blocker' => ['Review blocked', 'The broker review blocked the order.', self::TONE_WARN],
@@ -242,6 +243,7 @@ final class Lexicon
         'exit_stop_loss_reached' => ['Stop loss hit', 'Stop loss reached — exiting.', self::TONE_BAD],
         'exit_max_hold_reached' => ['Max hold hit', 'Max hold time reached — exiting.', self::TONE_NEUTRAL],
         'exit_max_hold_waiting_for_min_pnl' => ['Holding for min P&L', 'Max hold reached; waiting for minimum P&L before exit.', self::TONE_NEUTRAL],
+        'exit_min_hold_floor' => ['Min-hold floor', 'A discretionary exit (profit-target / max-hold) was held back by the minimum-hold floor. Protective stop-loss still fires.', self::TONE_NEUTRAL],
         'exit_thresholds_not_met' => ['Holding', 'No exit threshold met — holding the position.', self::TONE_NEUTRAL],
 
         // momentum-signal verdicts

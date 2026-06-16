@@ -115,6 +115,17 @@ return [
             'exit_stop_loss_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_STOP_LOSS_BPS', 2000.0),
             'exit_max_hold_minutes' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_MAX_HOLD_MINUTES', 1.0),
             'exit_max_hold_min_pnl_bps' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_MAX_HOLD_MIN_PNL_BPS', 1.0),
+            // Anti-churn floor: discretionary exits (profit-target, max-hold) are
+            // held back while a position is younger than this many minutes. The
+            // protective stop-loss is NEVER suppressed. Default-off (0.0); armed
+            // via env on the box.
+            'exit_min_hold_minutes' => (float) env('HARNESS_OPTIONS_PRODUCER_EXIT_MIN_HOLD_MINUTES', 0.0),
+            // Anti-churn re-entry cooldown: block a fresh open in an underlying
+            // for this many minutes after a position in that name was closed, so
+            // the loop cannot open->close->reopen the same name. Default-off (0);
+            // armed via env on the box. Complements entry_symbol_cooldown_minutes
+            // (which keys off recent opens).
+            'reentry_after_exit_minutes' => (int) env('HARNESS_OPTIONS_PRODUCER_REENTRY_AFTER_EXIT_MINUTES', 0),
             'allocation_capital_lock_days' => (float) env('HARNESS_OPTIONS_PRODUCER_ALLOCATION_CAPITAL_LOCK_DAYS', 1.0),
             'allocation_min_expected_gain' => (float) env('HARNESS_OPTIONS_PRODUCER_ALLOCATION_MIN_EXPECTED_GAIN', 0.0),
             'allocation_expected_gain_multiplier' => (float) env('HARNESS_OPTIONS_PRODUCER_ALLOCATION_EXPECTED_GAIN_MULTIPLIER', 1.0),

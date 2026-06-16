@@ -646,6 +646,169 @@ class OptionIntentProducerCommandTest extends TestCase
         $this->assertSame(10, $block->scanner_payload['recent_entry']['cooldown_minutes']);
     }
 
+    public function test_min_hold_floor_holds_discretionary_exit_inside_floor(): void
+    {
+        // Anti-churn: max-hold of 1 min would normally exit a 3-min-old position,
+        // but the 10-min minimum-hold floor holds the discretionary exit back.
+        config()->set('harness.options.producer.exit_max_hold_minutes', 1.0);
+        config()->set('harness.options.producer.exit_max_hold_min_pnl_bps', 1.0);
+        config()->set('harness.options.producer.exit_min_hold_minutes', 10.0);
+
+        RobinhoodTradeJournal::query()->create([
+            'account_number' => (string) config('harness.agentic_account'),
+            'asset_class' => 'option',
+            'symbol' => 'SPY',
+            'underlying_symbol' => 'SPY',
+            'option_id' => 'opt-741',
+            'chain_id' => 'chain-spy',
+            'option_type' => 'call',
+            'expiration_date' => '2026-06-15',
+            'strike_price' => 741.0,
+            'side' => 'buy',
+            'position_effect' => 'open',
+            'status' => 'filled',
+            'intent' => 'long_call',
+            'order_type' => 'limit',
+            'time_in_force' => 'gfd',
+            'market_hours' => 'regular_hours',
+            'quantity' => 1,
+            'limit_price' => 0.30,
+            'dollar_amount' => 30.00,
+            'filled_quantity' => 1,
+            'average_fill_price' => 0.30,
+            'filled_at' => now()->subMinutes(3),
+            'created_at' => now()->subMinutes(3),
+            'updated_at' => now()->subMinutes(3),
+        ]);
+
+        $this->optionPositions = [$this->position('opt-741', 741, openedMinutesAgo: 3)];
+        $this->optionStrikes = [741];
+        // Slightly green: enough for max-hold to fire, well below the 12% target.
+        $this->optionQuotes = ['opt-741' => ['bid_price' => '0.310000', 'ask_price' => '0.330000']];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, RobinhoodTradeJournal::query()
+            ->where('side', 'sell')
+            ->where('position_effect', 'close')
+            ->count(), 'discretionary exit must be held by the minimum-hold floor');
+
+        $block = RobinhoodTradeJournal::query()
+            ->where('intent', 'producer_scan')
+            ->where('underlying_symbol', 'SPY')
+            ->get()
+            ->first(fn ($r) => ($r->scanner_payload['exit_signal']['reason'] ?? null) === 'min_hold_floor');
+
+        $this->assertNotNull($block, 'expected a min-hold-floor exit block');
+        $this->assertSame('exit_min_hold_floor', $block->notes['producer_block']['reason']);
+        $this->assertSame('min_hold_floor', $block->scanner_payload['exit_signal']['reason']);
+        $this->assertLessThan(10.0, (float) $block->scanner_payload['exit_signal']['held_minutes']);
+    }
+
+    public function test_protective_stop_loss_still_exits_inside_min_hold_floor(): void
+    {
+        // The minimum-hold floor must NEVER suppress a protective stop-loss: a
+        // position 3 min old and deeply red must still be allowed to exit.
+        config()->set('harness.options.producer.exit_min_hold_minutes', 10.0);
+
+        RobinhoodTradeJournal::query()->create([
+            'account_number' => (string) config('harness.agentic_account'),
+            'asset_class' => 'option',
+            'symbol' => 'SPY',
+            'underlying_symbol' => 'SPY',
+            'option_id' => 'opt-741',
+            'chain_id' => 'chain-spy',
+            'option_type' => 'call',
+            'expiration_date' => '2026-06-15',
+            'strike_price' => 741.0,
+            'side' => 'buy',
+            'position_effect' => 'open',
+            'status' => 'filled',
+            'intent' => 'long_call',
+            'order_type' => 'limit',
+            'time_in_force' => 'gfd',
+            'market_hours' => 'regular_hours',
+            'quantity' => 1,
+            'limit_price' => 0.30,
+            'dollar_amount' => 30.00,
+            'filled_quantity' => 1,
+            'average_fill_price' => 0.30,
+            'filled_at' => now()->subMinutes(3),
+            'created_at' => now()->subMinutes(3),
+            'updated_at' => now()->subMinutes(3),
+        ]);
+
+        $this->optionPositions = [$this->position('opt-741', 741, openedMinutesAgo: 3)];
+        $this->optionStrikes = [741];
+        // Deeply red (−33%): past the 20% stop-loss band.
+        $this->optionQuotes = ['opt-741' => ['bid_price' => '0.200000', 'ask_price' => '0.220000']];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')
+            ->assertExitCode(0);
+
+        $exit = RobinhoodTradeJournal::query()
+            ->where('side', 'sell')
+            ->where('position_effect', 'close')
+            ->first();
+
+        $this->assertNotNull($exit, 'protective stop-loss must fire inside the minimum-hold floor');
+        $this->assertSame('reviewed', $exit->status);
+        $this->assertSame('close_long_call', $exit->intent);
+        $this->assertSame('stop_loss_reached', $exit->scanner_payload['exit_signal']['reason']);
+    }
+
+    public function test_recent_close_blocks_reentry_within_cooldown(): void
+    {
+        // Anti-churn: a position in SPY closed 5 min ago blocks a fresh open for
+        // the configured 30-min re-entry cooldown (open->close->reopen guard).
+        config()->set('harness.options.producer.reentry_after_exit_minutes', 30);
+
+        RobinhoodTradeJournal::query()->create([
+            'account_number' => (string) config('harness.agentic_account'),
+            'asset_class' => 'option',
+            'symbol' => 'SPY 2026-06-15 742C',
+            'underlying_symbol' => 'SPY',
+            'option_id' => 'closed-opt',
+            'chain_id' => 'closed-chain',
+            'option_type' => 'call',
+            'expiration_date' => '2026-06-15',
+            'strike_price' => 742.0,
+            'status' => 'filled',
+            'intent' => 'close_long_call',
+            'side' => 'sell',
+            'position_effect' => 'close',
+            'order_type' => 'limit',
+            'quantity' => 1,
+            'limit_price' => 0.40,
+            'filled_quantity' => 1,
+            'average_fill_price' => 0.40,
+            'filled_at' => now()->subMinutes(5),
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+
+        $this->optionQuotes = [
+            'opt-741' => ['bid_price' => '4.500000', 'ask_price' => '4.550000'],
+            'opt-742' => ['bid_price' => '0.680000', 'ask_price' => '0.700000'],
+        ];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')
+            ->expectsOutputToContain('re-entry after exit cooldown')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, $this->reviewCalls);
+        $block = RobinhoodTradeJournal::query()
+            ->where('intent', 'producer_scan')
+            ->where('underlying_symbol', 'SPY')
+            ->sole();
+        $this->assertSame('reentry_after_exit_cooldown', $block->notes['producer_block']['reason']);
+        $this->assertSame(30, $block->scanner_payload['recent_exit']['cooldown_minutes']);
+    }
+
     public function test_selection_skips_contracts_above_remaining_daily_gross_budget_after_top_off(): void
     {
         config()->set('harness.options.daily_gross_entry_debit', 250.0);

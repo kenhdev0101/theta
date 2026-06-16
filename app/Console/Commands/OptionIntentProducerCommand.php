@@ -193,6 +193,19 @@ class OptionIntentProducerCommand extends Command
                 continue;
             }
 
+            $recentExit = $this->recentExitForSymbol($symbol, $producer);
+            if ($recentExit !== null) {
+                $blocked++;
+                $this->recordProducerBlock($symbol, 'reentry_after_exit_cooldown', [
+                    'underlying_quote' => $underlying,
+                    'momentum_signal' => $momentum,
+                    'recent_exit' => $recentExit,
+                ], $producer);
+                $this->warn("{$symbol}: re-entry after exit cooldown");
+
+                continue;
+            }
+
             $selection = $this->selectContract(
                 $client,
                 $cfg,
@@ -883,6 +896,8 @@ class OptionIntentProducerCommand extends Command
         $maxHoldMinutes = (float) ($producer['exit_max_hold_minutes'] ?? 15.0);
         $maxHoldMinPnlBps = (float) ($producer['exit_max_hold_min_pnl_bps'] ?? 0.0);
 
+        $minHoldMinutes = max(0.0, (float) ($producer['exit_min_hold_minutes'] ?? 0.0));
+
         $reason = null;
         if ($pnlBps >= $profitTargetBps) {
             $reason = 'profit_target_reached';
@@ -892,6 +907,19 @@ class OptionIntentProducerCommand extends Command
             $reason = 'max_hold_reached';
         } elseif ($heldMinutes !== null && $heldMinutes >= $maxHoldMinutes) {
             $reason = 'max_hold_waiting_for_min_pnl';
+        }
+
+        // Anti-churn minimum-hold floor: hold back the discretionary exits
+        // (profit-target, max-hold) while the position is younger than the
+        // floor. The protective stop-loss is never suppressed — a position
+        // moving hard against us must always be allowed to exit.
+        if (
+            $minHoldMinutes > 0.0
+            && $heldMinutes !== null
+            && $heldMinutes < $minHoldMinutes
+            && in_array($reason, ['profit_target_reached', 'max_hold_reached'], true)
+        ) {
+            $reason = 'min_hold_floor';
         }
 
         return [
@@ -907,6 +935,7 @@ class OptionIntentProducerCommand extends Command
             'stop_loss_bps' => $stopLossBps,
             'max_hold_minutes' => $maxHoldMinutes,
             'max_hold_min_pnl_bps' => $maxHoldMinPnlBps,
+            'min_hold_minutes' => $minHoldMinutes,
         ];
     }
 
@@ -1143,6 +1172,51 @@ class OptionIntentProducerCommand extends Command
             'dollar_amount' => $row->dollar_amount !== null ? (float) $row->dollar_amount : null,
             'created_at' => $row->created_at?->toIso8601String(),
             'filled_at' => $row->filled_at?->toIso8601String(),
+            'cooldown_minutes' => $cooldownMinutes,
+        ];
+    }
+
+    /**
+     * Anti-churn re-entry cooldown: a recently closed position in this
+     * underlying blocks a fresh open for reentry_after_exit_minutes. Keys off
+     * the filled sell-to-close leg, so a name that just stopped us out cannot
+     * be immediately re-opened. Complements recentEntryForSymbol (recent opens).
+     *
+     * @return array<string,mixed>|null
+     */
+    private function recentExitForSymbol(string $symbol, array $producer): ?array
+    {
+        $cooldownMinutes = max(0, (int) ($producer['reentry_after_exit_minutes'] ?? 0));
+        if ($cooldownMinutes <= 0) {
+            return null;
+        }
+
+        $threshold = now()->subMinutes($cooldownMinutes);
+        $row = RobinhoodTradeJournal::query()
+            ->where('asset_class', 'option')
+            ->where('underlying_symbol', strtoupper($symbol))
+            ->where('side', 'sell')
+            ->where('position_effect', 'close')
+            ->where('status', 'filled')
+            ->where(function ($query) use ($threshold): void {
+                $query->where('filled_at', '>=', $threshold)
+                    ->orWhere('closed_at', '>=', $threshold)
+                    ->orWhere('updated_at', '>=', $threshold);
+            })
+            ->latest('filled_at')
+            ->latest('id')
+            ->first(['id', 'status', 'option_id', 'filled_at', 'closed_at', 'updated_at']);
+
+        if (! $row instanceof RobinhoodTradeJournal) {
+            return null;
+        }
+
+        return [
+            'id' => $row->id,
+            'status' => $row->status,
+            'option_id' => $row->option_id,
+            'filled_at' => $row->filled_at?->toIso8601String(),
+            'closed_at' => $row->closed_at?->toIso8601String(),
             'cooldown_minutes' => $cooldownMinutes,
         ];
     }
