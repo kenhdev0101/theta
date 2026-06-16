@@ -221,7 +221,7 @@
                 <div class="body" id="orders"></div>
             </section>
             <section class="panel">
-                <h2>Broker reconciliation <span class="badge" id="recon-badge"></span></h2>
+                <h2>Broker order ledger <span class="badge" id="recon-badge"></span></h2>
                 <div class="body" id="reconciliation"></div>
             </section>
             <section class="panel">
@@ -516,12 +516,13 @@
         }
 
         function renderRecon(rec) {
-            if (!rec || !rec.rows || !rec.rows.length) { el('reconciliation').innerHTML = `<div class="empty">No broker orders to reconcile.</div>`; return; }
+            const caption = `<div class="empty" style="padding:6px 14px 0;color:var(--muted)">Broker's standing option-order ledger (since options went live) — <strong>not today</strong>. See the Scorecard for today's activity.</div>`;
+            if (!rec || !rec.rows || !rec.rows.length) { el('reconciliation').innerHTML = `<div class="empty">No broker orders on the ledger.</div>`; el('recon-badge').textContent = ''; return; }
             const conf = rec.conflicts ? `<div class="errbar" style="margin:8px 14px">${rec.conflicts} label conflict(s): a row claims filled but broker truth disagrees. Trace the producer.</div>` : '';
-            el('reconciliation').innerHTML = `<div class="pillrow" style="padding:12px 14px">${rec.rows.map(r =>
+            el('reconciliation').innerHTML = `${caption}<div class="pillrow" style="padding:12px 14px">${rec.rows.map(r =>
                 `${chip(r.classification, {dot:true})} <span class="mono" style="color:var(--muted);margin-right:6px">×${r.count}</span>`
             ).join(' ')}</div>${conf}`;
-            el('recon-badge').textContent = rec.rows.reduce((s,r)=>s+r.count,0) + ' orders';
+            el('recon-badge').textContent = rec.rows.reduce((s,r)=>s+r.count,0) + ' lifetime';
         }
 
         function renderEvents(ev) {
