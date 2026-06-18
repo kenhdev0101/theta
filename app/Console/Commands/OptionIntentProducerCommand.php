@@ -626,7 +626,7 @@ class OptionIntentProducerCommand extends Command
                     'exit_signal' => $exitSignal,
                     'quote' => $quote,
                 ];
-                $reason = 'exit_'.$exitSignal['reason'];
+                $reason = $this->exitReasonToken($exitSignal['reason']);
                 $this->recentProducerBlockExists((string) $held['underlying_symbol'], $producer)
                     ? $this->recordSuppressedProducerBlock((string) $held['underlying_symbol'], $reason, $payload)
                     : $this->recordProducerBlock((string) $held['underlying_symbol'], $reason, $payload, $producer);
@@ -943,9 +943,19 @@ class OptionIntentProducerCommand extends Command
     {
         return [
             'verdict' => $exitSignal['verdict'] ?? 'BLOCK',
-            'reason' => 'exit_'.$exitSignal['reason'],
+            'reason' => $this->exitReasonToken($exitSignal['reason']),
             'exit_signal' => $exitSignal,
         ];
+    }
+
+    /**
+     * Namespace an exit-signal reason under the `exit_` block-reason prefix used
+     * by the cockpit Lexicon, without double-prefixing reasons that already
+     * carry it (e.g. exit_thresholds_not_met, exit_quote_stale_or_incomplete).
+     */
+    private function exitReasonToken(string $reason): string
+    {
+        return str_starts_with($reason, 'exit_') ? $reason : 'exit_'.$reason;
     }
 
     private function momentumSignal(string $symbol, array $underlying, array $barsPayload, array $producer): array
@@ -1234,6 +1244,7 @@ class OptionIntentProducerCommand extends Command
         $maxPremiumLimiter = $premiumCaps === []
             ? null
             : (string) array_key_first($premiumCaps);
+        $minPremium = max(0.0, (float) ($options['min_contract_ask'] ?? 0.0));
 
         $selectionConstraints = [
             'max_premium' => $maxPremium,
@@ -1321,6 +1332,11 @@ class OptionIntentProducerCommand extends Command
                 }
                 if (($quote['bid'] ?? null) === null || ($quote['ask'] ?? null) === null) {
                     $blockers[] = 'bid_or_ask_missing';
+
+                    continue;
+                }
+                if ($minPremium > 0.0 && (float) $quote['ask'] < $minPremium) {
+                    $blockers[] = 'ask_below_min_premium';
 
                     continue;
                 }

@@ -809,6 +809,78 @@ class OptionIntentProducerCommandTest extends TestCase
         $this->assertSame(30, $block->scanner_payload['recent_exit']['cooldown_minutes']);
     }
 
+    public function test_min_contract_ask_filters_sub_floor_contracts(): void
+    {
+        // Premium floor: contracts cheaper than the floor are where a 1-2c spread
+        // and the percentage stop live inside the noise band — skip them.
+        config()->set('harness.options.min_contract_ask', 0.50);
+        $this->optionQuotes = [
+            'opt-741' => ['bid_price' => '0.380000', 'ask_price' => '0.400000'],
+            'opt-742' => ['bid_price' => '0.300000', 'ask_price' => '0.320000'],
+        ];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')
+            ->expectsOutputToContain('no marketable contract')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, $this->reviewCalls);
+        $row = RobinhoodTradeJournal::sole();
+        $this->assertSame('risk_aborted', $row->status);
+        $this->assertContains('ask_below_min_premium', $row->scanner_payload['selection']['blockers']);
+    }
+
+    public function test_held_position_exit_block_reason_is_not_double_prefixed(): void
+    {
+        // Regression: 'exit_thresholds_not_met' already carries the exit_ prefix,
+        // so the block reason must not become 'exit_exit_thresholds_not_met'.
+        config()->set('harness.options.producer.exit_max_hold_minutes', 15.0);
+        RobinhoodTradeJournal::query()->create([
+            'account_number' => (string) config('harness.agentic_account'),
+            'asset_class' => 'option',
+            'symbol' => 'SPY',
+            'underlying_symbol' => 'SPY',
+            'option_id' => 'opt-741',
+            'chain_id' => 'chain-spy',
+            'option_type' => 'call',
+            'expiration_date' => '2026-06-15',
+            'strike_price' => 741.0,
+            'side' => 'buy',
+            'position_effect' => 'open',
+            'status' => 'filled',
+            'intent' => 'long_call',
+            'order_type' => 'limit',
+            'time_in_force' => 'gfd',
+            'market_hours' => 'regular_hours',
+            'quantity' => 1,
+            'limit_price' => 0.30,
+            'dollar_amount' => 30.00,
+            'filled_quantity' => 1,
+            'average_fill_price' => 0.30,
+            'filled_at' => now()->subMinutes(5),
+            'created_at' => now()->subMinutes(5),
+            'updated_at' => now()->subMinutes(5),
+        ]);
+
+        $this->optionPositions = [$this->position('opt-741', 741, openedMinutesAgo: 5)];
+        $this->optionStrikes = [741];
+        // +3.3%: below the 12% target, above the -20% stop, held < max → no exit.
+        $this->optionQuotes = ['opt-741' => ['bid_price' => '0.310000', 'ask_price' => '0.330000']];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')
+            ->assertExitCode(0);
+
+        $block = RobinhoodTradeJournal::query()
+            ->where('intent', 'producer_scan')
+            ->where('underlying_symbol', 'SPY')
+            ->get()
+            ->first(fn ($r) => ($r->scanner_payload['exit_signal']['reason'] ?? null) === 'exit_thresholds_not_met');
+
+        $this->assertNotNull($block, 'expected a holding (thresholds-not-met) exit block');
+        $this->assertSame('exit_thresholds_not_met', $block->notes['producer_block']['reason']);
+    }
+
     public function test_selection_skips_contracts_above_remaining_daily_gross_budget_after_top_off(): void
     {
         config()->set('harness.options.daily_gross_entry_debit', 250.0);

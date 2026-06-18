@@ -76,6 +76,11 @@ return [
         // Spread cap in bps of mid (1500 = 15%).
         'max_spread_bps' => (float) env('HARNESS_OPTIONS_MAX_SPREAD_BPS', 1500),
         'max_contract_ask' => (float) env('HARNESS_OPTIONS_MAX_CONTRACT_ASK', 5.00),
+        // Minimum contract ask (premium floor). Below this, a 1-2c spread and the
+        // percentage stop-loss live inside the contract's own noise band, so the
+        // position is bought near the ask and stopped out by the spread. Default
+        // 0.0 (off); armed via env on the box. Pairs with max_spread_bps.
+        'min_contract_ask' => (float) env('HARNESS_OPTIONS_MIN_CONTRACT_ASK', 0.0),
         'per_play_max_debit' => (float) env('HARNESS_OPTIONS_PER_PLAY_MAX_DEBIT', 75.00),
         'per_day_max_debit' => (float) env('HARNESS_OPTIONS_PER_DAY_MAX_DEBIT', 250.00),
         'daily_gross_entry_debit' => (float) env('HARNESS_OPTIONS_DAILY_GROSS_ENTRY_DEBIT', 500.00),
