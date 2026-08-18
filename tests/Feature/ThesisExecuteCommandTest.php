@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 class ThesisExecuteCommandTest extends TestCase
@@ -33,6 +34,15 @@ class ThesisExecuteCommandTest extends TestCase
 
     private bool $advertiseCancelTool = true;
 
+    /** Blocking alerts the fake review returns; empty means a clean review. */
+    private array $reviewAlerts = [];
+
+    /** Make place_option_order fail at the transport, i.e. outcome unknown. */
+    private bool $failPlaceWithTransportError = false;
+
+    /** Simulate slow broker I/O by advancing the clock during get_portfolio. */
+    private ?Carbon $travelToOnPortfolioRead = null;
+
     private string $quoteBid = '2.000000';
 
     private string $quoteAsk = '2.200000';
@@ -47,6 +57,8 @@ class ThesisExecuteCommandTest extends TestCase
 
         // 09:35 ET — inside the default 09:30-10:15 entry window.
         $this->travelTo(Carbon::parse('2026-08-17 09:35:00', 'America/New_York'));
+        // The cancel verifier polls with real delays in production.
+        Sleep::fake();
 
         config()->set('harness.oauth_token', 'fixture-token');
         config()->set('harness.kill_switch', false);
@@ -165,7 +177,47 @@ class ThesisExecuteCommandTest extends TestCase
         $this->assertSame('broker-order-1', $row->notes['thesis_entry']['blocked']['broker_order_id']);
     }
 
-    public function test_a_blocked_play_is_never_picked_up_again(): void
+    public function test_a_blocked_play_keeps_being_supervised_until_broker_truth_clears_it(): void
+    {
+        // "Blocked" means stop re-pegging, never stop watching. The order is
+        // still live gfd — abandoning it lets it fill at 15:59 on a play the
+        // no-chase rule already expired.
+        $row = $this->assembledPlay();
+        $this->stateAfterCancel = 'queued';
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->travel(60)->seconds();
+        $this->quoteBid = '2.050000';
+        $this->quoteAsk = '2.250000';
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $this->assertSame(1, $this->cancelCalls);
+        $this->assertSame(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, $row->refresh()->status);
+
+        // Next tick: still blocked, still supervised, cancel retried, and the
+        // lane still refuses to place a second order.
+        $this->travel(60)->seconds();
+        $this->artisan('theta:thesis-execute')
+            ->expectsOutputToContain('blocked with a live order')
+            ->assertExitCode(0);
+
+        $this->assertSame(2, $this->cancelCalls, 'a blocked play with a live order must keep being cancelled');
+        $this->assertSame(1, $this->placeCalls, 'a blocked play never re-places');
+        $this->assertSame(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, $row->refresh()->status);
+
+        // Broker truth finally confirms the cancel: only now does the play
+        // leave the lane.
+        $this->stateAfterCancel = 'cancelled';
+        $this->travel(60)->seconds();
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $row->refresh();
+        $this->assertSame(ThesisLaneConfig::STATUS_EXPIRED_UNFILLED, $row->status);
+        $this->assertSame('blocked_order_cancel_retry_confirmed', $row->notes['thesis_entry']['expired']['reason']);
+    }
+
+    public function test_a_blocked_play_is_still_swept_after_the_window_closes(): void
     {
         $row = $this->assembledPlay();
         $this->stateAfterCancel = 'queued';
@@ -176,17 +228,195 @@ class ThesisExecuteCommandTest extends TestCase
         $this->quoteBid = '2.050000';
         $this->quoteAsk = '2.250000';
         $this->artisan('theta:thesis-execute')->assertExitCode(0);
-        $this->assertSame(1, $this->cancelCalls);
+        $this->assertSame(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, $row->refresh()->status);
 
-        // Even if reconciliation later rewrites the status from broker truth,
-        // the durable blocked flag keeps this lane's hands off the play.
-        $row->refresh()->forceFill(['status' => 'open'])->save();
-        $this->travel(60)->seconds();
+        // Past the close the blocked row must still be reachable by the sweep.
+        $this->travelTo(Carbon::parse('2026-08-17 10:16:00', 'America/New_York'));
+        $this->stateAfterCancel = 'cancelled';
 
         $this->artisan('theta:thesis-execute')->assertExitCode(0);
 
-        $this->assertSame(1, $this->cancelCalls, 'a blocked play must not be cancelled again');
+        $this->assertSame(2, $this->cancelCalls);
+        $this->assertSame(ThesisLaneConfig::STATUS_EXPIRED_UNFILLED, $row->refresh()->status);
+    }
+
+    public function test_a_concurrent_invocation_cannot_double_place_during_a_repeg(): void
+    {
+        // withoutOverlapping only guards the scheduler against itself. A manual
+        // run racing a scheduled tick must not both cancel order A and both
+        // place — the second cancel of an already-cancelled order reads back
+        // `cancelled`, which would otherwise look like clear-to-replace.
+        $row = $this->assembledPlay();
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
         $this->assertSame(1, $this->placeCalls);
+
+        // Simulate the other invocation already inside the critical section.
+        $row->refresh()->forceFill(['status' => ThesisLaneConfig::STATUS_REPEGGING])->save();
+        $this->travel(60)->seconds();
+        $this->quoteBid = '2.050000';
+        $this->quoteAsk = '2.250000';
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $this->assertSame(0, $this->cancelCalls, 'the second invocation must not cancel a re-peg in flight');
+        $this->assertSame(1, $this->placeCalls, 'the second invocation must not place a second order');
+        $this->assertSame(ThesisLaneConfig::STATUS_REPEGGING, $row->refresh()->status);
+    }
+
+    public function test_a_repeg_back_to_a_previously_used_price_still_mints_a_fresh_ref(): void
+    {
+        // intentKey hashes the limit price, so without a per-attempt seed the
+        // ref for a repeated price comes back `placed`, the duplicate gate
+        // aborts, and the play dies with its old order already cancelled.
+        $row = $this->assembledPlay();
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->assertSame('2.10', $this->lastPlaceArguments['price']);
+
+        $this->travel(60)->seconds();
+        $this->quoteBid = '2.050000';
+        $this->quoteAsk = '2.250000';
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->assertSame('2.13', $this->lastPlaceArguments['price']);
+
+        // Book comes back: the limit returns to a price already used today.
+        $this->travel(60)->seconds();
+        $this->quoteBid = '2.000000';
+        $this->quoteAsk = '2.200000';
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $this->assertSame(3, $this->placeCalls);
+        $this->assertSame('2.10', $this->lastPlaceArguments['price']);
+        $this->assertSame('submitted', $row->refresh()->status);
+        $this->assertSame(3, $row->notes['thesis_entry']['attempt_seq']);
+    }
+
+    public function test_a_rail_block_after_a_confirmed_cancel_returns_the_play_to_placeable(): void
+    {
+        // The old order is proven dead, so a failed re-place must leave a
+        // placeable row with no live order — not `risk_aborted` oblivion.
+        $row = $this->assembledPlay();
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->travel(60)->seconds();
+        $this->quoteBid = '2.050000';
+        $this->quoteAsk = '2.250000';
+        $this->reviewAlerts = [['severity' => 'error', 'message' => 'insufficient buying power']];
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $this->assertSame(1, $this->cancelCalls);
+        $this->assertSame(1, $this->placeCalls, 'the rail blocked before the place call');
+
+        $row->refresh();
+        $this->assertSame(ThesisLaneConfig::STATUS_ASSEMBLED, $row->status);
+        $this->assertNull($row->broker_order_id, 'the cancelled order id must not linger as if live');
+        $this->assertContains('broker-order-1', $row->notes['thesis_entry']['prior_broker_order_ids']);
+        $this->assertStringContainsString('rail_block', $row->notes['thesis_entry']['last_place_block']['reason']);
+        $this->assertSame(1, $row->notes['thesis_entry']['place_attempts_failed']);
+    }
+
+    public function test_an_unconfirmed_placement_stays_supervised_and_adopts_its_orphan_order(): void
+    {
+        // A throw around the place call is not proof of rejection: a timeout
+        // after the broker accepted looks identical.
+        $row = $this->assembledPlay();
+        $this->failPlaceWithTransportError = true;
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $row->refresh();
+        $this->assertSame(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, $row->status);
+        $this->assertSame('place_unconfirmed_after_throw', $row->notes['thesis_entry']['blocked']['reason']);
+        $this->assertTrue($row->notes['thesis_entry']['blocked']['requires_operator_reconcile']);
+
+        // The order actually landed. The next tick finds and adopts it, so
+        // ordinary supervision can cancel it.
+        $this->failPlaceWithTransportError = false;
+        $this->brokerOptionOrders[] = [
+            'id' => 'orphan-order-1',
+            'state' => 'queued',
+            'legs' => [['option_id' => 'opt-100', 'side' => 'buy', 'position_effect' => 'open']],
+        ];
+        $this->travel(60)->seconds();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->assertSame('orphan-order-1', $row->refresh()->broker_order_id);
+
+        // And now it is cancellable like any other supervised order.
+        $this->travel(60)->seconds();
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->assertSame(ThesisLaneConfig::STATUS_EXPIRED_UNFILLED, $row->refresh()->status);
+    }
+
+    public function test_parking_the_thesis_mid_window_cancels_the_resting_order(): void
+    {
+        // Parking is the operator's kill surface. It must reach a live entry
+        // order on the next tick, ahead of the reprice cadence.
+        $row = $this->assembledPlay();
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $this->assertSame(1, $this->placeCalls);
+
+        ThesisIntent::query()->update(['status' => ThesisIntent::STATUS_PARKED, 'parked_at' => now()]);
+        // Deliberately still inside the reprice window — standing down does
+        // not wait for the cadence.
+        $this->travel(5)->seconds();
+
+        $this->artisan('theta:thesis-execute')
+            ->expectsOutputToContain('thesis_stood_down')
+            ->assertExitCode(0);
+
+        $this->assertSame(1, $this->cancelCalls);
+        $row->refresh();
+        $this->assertSame(ThesisLaneConfig::STATUS_EXPIRED_UNFILLED, $row->status);
+        $this->assertSame('thesis_stood_down', $row->notes['thesis_entry']['expired']['reason']);
+    }
+
+    public function test_a_window_that_closes_during_broker_io_never_places(): void
+    {
+        // The window is re-read immediately before the broker write path, not
+        // once per tick: resolver and broker-context I/O sit in between.
+        $this->assembledPlay();
+        $this->travelToOnPortfolioRead = Carbon::parse('2026-08-17 10:16:00', 'America/New_York');
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $this->assertSame(0, $this->placeCalls, 'a placement must not land past the window close');
+        $this->assertSame(0, $this->reviewCalls);
+    }
+
+    public function test_zero_max_open_positions_is_a_hard_stop_not_unbounded(): void
+    {
+        config()->set('harness.thesis.max_open_positions', 0);
+        $this->assembledPlay();
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')
+            ->expectsOutputToContain('max_open_positions is not configured')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, $this->placeCalls);
+    }
+
+    public function test_a_window_close_past_the_scheduled_sweep_bound_is_clamped(): void
+    {
+        // The cron bound in routes/console.php is not env-configurable. A
+        // 10:30 close would leave a resting gfd order with zero sweep ticks.
+        config()->set('harness.thesis.entry.window_close_et', '10:30');
+        $this->assembledPlay();
+        $this->fakeMcp();
+
+        $this->artisan('theta:thesis-execute')
+            ->expectsOutputToContain('clamped to 10:15')
+            ->assertExitCode(0);
     }
 
     public function test_a_fill_landing_before_the_cancel_never_produces_a_second_order(): void
@@ -211,7 +441,8 @@ class ThesisExecuteCommandTest extends TestCase
     public function test_no_repeg_when_the_broker_does_not_advertise_option_cancel(): void
     {
         // Fail closed on a versionless tool surface: without a proven cancel
-        // path the resting order simply keeps working.
+        // path the resting order simply keeps working — and stays supervised,
+        // so it is never left to fill hours after the window shut.
         $row = $this->assembledPlay();
         $this->advertiseCancelTool = false;
         $this->fakeMcp();
@@ -226,6 +457,22 @@ class ThesisExecuteCommandTest extends TestCase
         $this->assertSame(0, $this->cancelCalls);
         $this->assertSame(1, $this->placeCalls);
         $this->assertSame('submitted', $row->refresh()->status);
+
+        // Window closes with no cancel tool: the play is blocked but STILL
+        // supervised, never abandoned with a live order.
+        $this->travelTo(Carbon::parse('2026-08-17 10:16:00', 'America/New_York'));
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+        $row->refresh();
+        $this->assertSame(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, $row->status);
+        $this->assertSame('cancel_capability_unavailable', $row->notes['thesis_entry']['blocked']['reason']);
+
+        // The tool surface returns; supervision cancels and retires the play.
+        $this->advertiseCancelTool = true;
+        $this->travel(60)->seconds();
+        $this->artisan('theta:thesis-execute')->assertExitCode(0);
+
+        $this->assertSame(1, $this->cancelCalls);
+        $this->assertSame(ThesisLaneConfig::STATUS_EXPIRED_UNFILLED, $row->refresh()->status);
     }
 
     public function test_repeg_does_not_compete_with_its_own_debit_against_the_daily_budget(): void
@@ -459,10 +706,7 @@ class ThesisExecuteCommandTest extends TestCase
                     'mark_price' => $this->quoteAsk,
                     'updated_at' => now()->subSeconds($this->optionQuoteAgeSeconds)->toIso8601ZuluString('microsecond'),
                 ]]]]]),
-                'get_portfolio' => $this->toolResponse($payload['id'], ['data' => [
-                    'cash' => (string) $this->cash,
-                    'buying_power' => ['buying_power' => (string) $this->cash],
-                ]]),
+                'get_portfolio' => $this->portfolio($payload['id']),
                 'get_equity_orders' => $this->toolResponse($payload['id'], ['data' => ['orders' => []]]),
                 'get_option_orders' => $this->toolResponse($payload['id'], ['data' => ['orders' => $this->brokerOptionOrders]]),
                 'get_option_positions' => $this->toolResponse($payload['id'], ['data' => ['positions' => []]]),
@@ -480,15 +724,32 @@ class ThesisExecuteCommandTest extends TestCase
         });
     }
 
+    private function portfolio(mixed $id): mixed
+    {
+        if ($this->travelToOnPortfolioRead !== null) {
+            $this->travelTo($this->travelToOnPortfolioRead);
+            $this->travelToOnPortfolioRead = null;
+        }
+
+        return $this->toolResponse($id, ['data' => [
+            'cash' => (string) $this->cash,
+            'buying_power' => ['buying_power' => (string) $this->cash],
+        ]]);
+    }
+
     private function review(mixed $id): mixed
     {
         $this->reviewCalls++;
 
-        return $this->toolResponse($id, ['ok' => true, 'alerts' => []]);
+        return $this->toolResponse($id, ['ok' => true, 'alerts' => $this->reviewAlerts]);
     }
 
     private function place(mixed $id, array $arguments): mixed
     {
+        if ($this->failPlaceWithTransportError) {
+            return Http::response('gateway timeout', 504);
+        }
+
         $this->placeCalls++;
         $this->lastPlaceArguments = $arguments;
         $orderId = 'broker-order-'.$this->placeCalls;
