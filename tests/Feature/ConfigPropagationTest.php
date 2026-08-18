@@ -15,6 +15,8 @@ use App\Console\Commands\OptionReviewProbeCommand;
 use App\Console\Commands\OptionsCapabilityReadbackCommand;
 use App\Console\Commands\ReconcileCommand;
 use App\Console\Commands\ThesisAddCommand;
+use App\Console\Commands\ThesisAssembleCommand;
+use App\Console\Commands\ThesisExecuteCommand;
 use App\Console\Commands\ThesisListCommand;
 use App\Console\Commands\ThesisSetCommand;
 use App\Robinhood\Rails\OrderIntent;
@@ -42,6 +44,8 @@ class ConfigPropagationTest extends TestCase
         ThesisAddCommand::class,
         ThesisListCommand::class,
         ThesisSetCommand::class,
+        ThesisAssembleCommand::class,
+        ThesisExecuteCommand::class,
     ];
 
     public function test_every_command_propagates_the_full_harness_block(): void
@@ -78,9 +82,13 @@ class ConfigPropagationTest extends TestCase
 
             foreach ([
                 'enabled', 'max_open_positions', 'per_play_max_debit', 'per_day_max_debit',
-                'dte_floor', 'dte_ceiling', 'approval',
+                'dte_floor', 'dte_ceiling', 'approval', 'entry',
             ] as $key) {
                 $this->assertArrayHasKey($key, $cfg['thesis'] ?? [], "$class thesis block missing '$key'");
+            }
+
+            foreach (['window_close_et', 'reprice_seconds', 'max_chase_bps'] as $key) {
+                $this->assertArrayHasKey($key, $cfg['thesis']['entry'] ?? [], "$class thesis.entry block missing '$key'");
             }
 
             foreach (['per_day_max_debit', 'per_play_max_debit', 'per_symbol_max_debit', 'max_open_positions'] as $key) {
@@ -155,6 +163,30 @@ class ConfigPropagationTest extends TestCase
         $cfg = (new BrokerReadbackCommand)->assembleConfig();
 
         $this->assertNotSame('', (string) $cfg['agentic_account'], 'agentic account pin must never be empty');
+    }
+
+    public function test_thesis_entry_window_values_reach_both_thesis_lane_commands(): void
+    {
+        config()->set('harness.thesis.entry.window_close_et', '10:05');
+        config()->set('harness.thesis.entry.reprice_seconds', 30);
+        config()->set('harness.thesis.entry.max_chase_bps', 90.0);
+
+        foreach ([ThesisAssembleCommand::class, ThesisExecuteCommand::class] as $class) {
+            $cfg = (new $class)->assembleConfig();
+
+            $this->assertSame('10:05', $cfg['thesis']['entry']['window_close_et'], "$class dropped window_close_et");
+            $this->assertSame(30, $cfg['thesis']['entry']['reprice_seconds'], "$class dropped reprice_seconds");
+            $this->assertSame(90.0, $cfg['thesis']['entry']['max_chase_bps'], "$class dropped max_chase_bps");
+        }
+    }
+
+    public function test_thesis_entry_defaults_are_the_no_chase_window(): void
+    {
+        $cfg = (new ThesisExecuteCommand)->assembleConfig();
+
+        $this->assertSame('10:15', $cfg['thesis']['entry']['window_close_et']);
+        $this->assertSame(45, $cfg['thesis']['entry']['reprice_seconds']);
+        $this->assertSame(150.0, $cfg['thesis']['entry']['max_chase_bps']);
     }
 
     public function test_options_producer_default_universe_is_dynamic_and_broad(): void
