@@ -176,6 +176,22 @@ return [
             // unarmed slate never trades.
             'approval_expires_et' => env('HARNESS_THESIS_APPROVAL_EXPIRES_ET', '10:15'),
         ],
+        // Open executor — the entry window and its precommitted fill-working
+        // bounds. Entries are worked passively from the open and the window
+        // is a hard no-chase boundary: at the close a resting entry order is
+        // cancelled and the play expires unfilled rather than paying up late.
+        'entry' => [
+            // Eastern wall-clock time the entry window shuts. After this the
+            // executor only cancels and expires; it never places or re-pegs.
+            'window_close_et' => env('HARNESS_THESIS_ENTRY_WINDOW_CLOSE_ET', '10:15'),
+            // Seconds a resting entry order is left to work before the
+            // executor cancels it and re-pegs against the live quote.
+            'reprice_seconds' => (int) env('HARNESS_THESIS_ENTRY_REPRICE_SECONDS', 45),
+            // Hard ceiling on the whole re-peg ladder, in bps above the mid
+            // the play anchored on. This bounds the total price paid for
+            // patience; the anchor never ratchets with a re-peg.
+            'max_chase_bps' => (float) env('HARNESS_THESIS_ENTRY_MAX_CHASE_BPS', 150.0),
+        ],
     ],
 
     // Data plane — Alpaca SIP feed (scanner substrate; RH MCP is not the firehose).

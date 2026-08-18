@@ -29,8 +29,13 @@ final class OptionExecutor
     /**
      * @param  array  $context  broker/account truth snapshot (see
      *                          OptionRailPipeline context contract)
+     * @param  bool  $requireMarketableBuy  forwarded verbatim to the rails.
+     *                                      Default true keeps the immediate-fill contract
+     *                                      every existing caller relies on; the thesis
+     *                                      lane passes false to work a passive entry
+     *                                      inside the live book (see OptionRailPipeline).
      */
-    public function execute(OptionOrderIntent $intent, array $context = []): array
+    public function execute(OptionOrderIntent $intent, array $context = [], bool $requireMarketableBuy = true): array
     {
         if (($intent->optionId ?? '') === '') {
             throw new RuntimeException('executor requires a resolver-stamped option_id — symbolic intents resolve before execution');
@@ -40,7 +45,7 @@ final class OptionExecutor
         // block must not generate broker review traffic.
         $preVerdict = $this->rails->evaluate($intent, $this->cfg, array_merge($context, [
             'existing_ref' => $this->refSummary($context),
-        ]), includeReview: false);
+        ]), includeReview: false, requireMarketableBuy: $requireMarketableBuy);
 
         if (! $preVerdict->allowed()) {
             return $this->abort($intent, $preVerdict, refRow: null, journalId: $this->contextJournalId($context));
@@ -61,7 +66,7 @@ final class OptionExecutor
         }
 
         // Phase 2 — full chain including review-dependent checks.
-        $verdict = $this->rails->evaluate($intent, $this->cfg, $context);
+        $verdict = $this->rails->evaluate($intent, $this->cfg, $context, requireMarketableBuy: $requireMarketableBuy);
 
         if (! $verdict->allowed()) {
             return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));

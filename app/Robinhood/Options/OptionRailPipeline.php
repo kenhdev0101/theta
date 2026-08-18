@@ -62,13 +62,25 @@ final class OptionRailPipeline
 
     /**
      * @param  bool  $includeReview  append the broker-review gate
-     * @param  bool  $includeCaps     append the capital/allocation gate. The
-     *                                decision layer evaluates candidate quality
-     *                                with this OFF (capital must not gate
-     *                                evaluation); the execution layer always
-     *                                runs it ON before placing.
+     * @param  bool  $includeCaps  append the capital/allocation gate. The
+     *                             decision layer evaluates candidate quality
+     *                             with this OFF (capital must not gate
+     *                             evaluation); the execution layer always
+     *                             runs it ON before placing.
+     * @param  bool  $requireMarketableBuy  the default (true) is the scalp
+     *                                      lane's immediate-fill contract: a buy
+     *                                      limit must be at or above the live ask.
+     *                                      The thesis lane works a passive entry for
+     *                                      a bounded window, so it evaluates with
+     *                                      this OFF and the marketability gate
+     *                                      instead requires the limit to sit INSIDE
+     *                                      the live book (bid <= limit <= ask). That
+     *                                      is a different invariant, not a weaker
+     *                                      one: the passive branch bounds the price
+     *                                      from above, which the marketable branch
+     *                                      never does.
      */
-    public function evaluate(OptionOrderIntent $intent, array $cfg, array $context, bool $includeReview = true, bool $includeCaps = true): OptionRailVerdict
+    public function evaluate(OptionOrderIntent $intent, array $cfg, array $context, bool $includeReview = true, bool $includeCaps = true, bool $requireMarketableBuy = true): OptionRailVerdict
     {
         $results = [
             $this->killSwitchGate($cfg),
@@ -78,7 +90,7 @@ final class OptionRailPipeline
             $this->sessionGate($intent, $context),
             $this->quoteFreshnessGate($cfg, $context),
             $this->spreadGate($intent, $cfg, $context),
-            $this->marketabilityGate($intent, $context),
+            $this->marketabilityGate($intent, $context, $requireMarketableBuy),
         ];
 
         if ($includeCaps) {
@@ -290,7 +302,7 @@ final class OptionRailPipeline
         return OptionGateResult::allow('spread', ['spread_bps' => $quote['spread_bps']]);
     }
 
-    private function marketabilityGate(OptionOrderIntent $intent, array $context): OptionGateResult
+    private function marketabilityGate(OptionOrderIntent $intent, array $context, bool $requireMarketableBuy = true): OptionGateResult
     {
         if ($intent->orderType !== 'limit') {
             return OptionGateResult::allow('marketability', ['order_type' => $intent->orderType]);
@@ -313,11 +325,33 @@ final class OptionRailPipeline
             if ($ask === null || $ask <= 0.0) {
                 return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'ask_unverified');
             }
-            if ($limit + 0.000001 < $ask) {
-                return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'buy_limit_below_live_ask', [
-                    'limit_price' => $limit,
-                    'ask' => $ask,
-                ]);
+            if ($requireMarketableBuy) {
+                if ($limit + 0.000001 < $ask) {
+                    return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'buy_limit_below_live_ask', [
+                        'limit_price' => $limit,
+                        'ask' => $ask,
+                    ]);
+                }
+            } else {
+                // Worked (passive) entry: the limit must sit inside the live
+                // book. Below the bid is an order parked behind the queue for
+                // a window that is about to shut; above the ask is paying more
+                // than the market asks.
+                if ($bid === null || $bid <= 0.0) {
+                    return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'bid_unverified');
+                }
+                if ($limit + 0.000001 < $bid) {
+                    return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'passive_buy_limit_below_live_bid', [
+                        'limit_price' => $limit,
+                        'bid' => $bid,
+                    ]);
+                }
+                if ($limit - 0.000001 > $ask) {
+                    return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'passive_buy_limit_above_live_ask', [
+                        'limit_price' => $limit,
+                        'ask' => $ask,
+                    ]);
+                }
             }
         }
 
@@ -337,6 +371,7 @@ final class OptionRailPipeline
             'limit_price' => $limit,
             'bid' => $bid,
             'ask' => $ask,
+            'marketable_buy_required' => $requireMarketableBuy,
         ]);
     }
 

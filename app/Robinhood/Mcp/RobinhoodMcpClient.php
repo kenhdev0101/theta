@@ -157,6 +157,19 @@ class RobinhoodMcpClient
         ], $filters));
     }
 
+    /**
+     * Cancel one option order on the pinned account. Callers must verify the
+     * cancel from broker truth (get_option_orders) before assuming the
+     * exposure is gone — the response alone is not proof.
+     */
+    public function cancelOptionOrder(string $orderId): array
+    {
+        return $this->call('cancel_option_order', [
+            'account_number' => $this->agenticAccount,
+            'order_id' => $orderId,
+        ]);
+    }
+
     public function reviewOptionOrder(array $order): array
     {
         return $this->call('review_option_order', array_merge($order, [
