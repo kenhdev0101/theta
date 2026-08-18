@@ -183,6 +183,15 @@ return [
         'entry' => [
             // Eastern wall-clock time the entry window shuts. After this the
             // executor only cancels and expires; it never places or re-pegs.
+            //
+            // COUPLED TO THE SCHEDULE. routes/console.php runs the executor
+            // 09:30-10:20 ET and that cron is NOT env-configurable, so a close
+            // at or past 10:20 would leave a resting gfd order with zero cancel
+            // ticks after it — resting to 16:00 and able to fill on a play the
+            // no-chase rule already expired. ThesisLaneConfig::resolveWindowClose()
+            // therefore clamps anything later than (sweep bound − 5 min) back
+            // to 10:15 and logs the clamp. Widening this means widening the
+            // schedule first.
             'window_close_et' => env('HARNESS_THESIS_ENTRY_WINDOW_CLOSE_ET', '10:15'),
             // Seconds a resting entry order is left to work before the
             // executor cancels it and re-pegs against the live quote.

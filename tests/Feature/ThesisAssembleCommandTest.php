@@ -138,6 +138,97 @@ class ThesisAssembleCommandTest extends TestCase
         $this->assertSame('C', RobinhoodTradeJournal::sole()->underlying_symbol);
     }
 
+    public function test_a_second_thesis_on_the_same_underlying_is_refused(): void
+    {
+        // The per-underlying debit rail counts POSITIONS, so two resting entry
+        // orders in one name both pass it and both can fill — 2x the cap.
+        $this->activeThesis('C');
+        $this->activeThesis('C');
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:thesis-assemble')
+            ->expectsOutputToContain('underlying_already_engaged')
+            ->assertExitCode(0);
+
+        $this->assertSame(1, RobinhoodTradeJournal::query()->count());
+    }
+
+    public function test_dry_run_also_refuses_a_second_play_on_the_same_underlying(): void
+    {
+        // The preview writes nothing, so it must track its own commitments or
+        // it promises a slate the live run would refuse.
+        $this->activeThesis('C');
+        $this->activeThesis('C');
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:thesis-assemble --dry-run')
+            ->expectsOutputToContain('WOULD ASSEMBLE')
+            ->expectsOutputToContain('underlying_already_engaged')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, RobinhoodTradeJournal::query()->count());
+    }
+
+    public function test_zero_max_open_positions_is_a_hard_stop_not_unbounded(): void
+    {
+        config()->set('harness.thesis.max_open_positions', 0);
+        $this->activeThesis();
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:thesis-assemble')
+            ->expectsOutputToContain('max_open_positions_unconfigured')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, RobinhoodTradeJournal::query()->count());
+    }
+
+    public function test_lane_dte_rails_clamp_an_already_active_thesis_band(): void
+    {
+        // dte_floor/dte_ceiling are checked at authoring time, but they move.
+        // Without a clamp here the config is inert on every active thesis.
+        config()->set('harness.thesis.dte_floor', 14);
+        config()->set('harness.thesis.dte_ceiling', 40);
+        $this->activeThesis();
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:thesis-assemble')->assertExitCode(0);
+
+        $row = RobinhoodTradeJournal::sole();
+        // Thesis band 30-70 clamps to 30-40, so the 60-DTE expiry the
+        // unclamped band would pick is out; 2026-09-18 (32 DTE) wins.
+        $this->assertSame('2026-09-18', $row->expiration_date?->toDateString());
+        $this->assertTrue($row->scanner_payload['selection']['dte_band_clamp']['clamped']);
+    }
+
+    public function test_a_lane_ceiling_below_the_thesis_floor_skips_with_a_named_reason(): void
+    {
+        config()->set('harness.thesis.dte_ceiling', 10);
+        $this->activeThesis();
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:thesis-assemble')
+            ->expectsOutputToContain('dte_band_empty_after_lane_clamp')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, RobinhoodTradeJournal::query()->count());
+    }
+
+    public function test_dry_run_respects_the_kill_switch(): void
+    {
+        // --dry-run writes no rows but does make live broker reads, so an
+        // engaged kill switch disarms it too.
+        config()->set('harness.kill_switch', true);
+        $this->activeThesis();
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:thesis-assemble --dry-run')
+            ->expectsOutputToContain('kill switch engaged')
+            ->assertExitCode(0);
+
+        Http::assertNothingSent();
+        $this->assertSame(0, RobinhoodTradeJournal::query()->count());
+    }
+
     public function test_wide_spread_skips_with_a_named_reason_and_writes_nothing(): void
     {
         config()->set('harness.options.max_spread_bps', 500.0);

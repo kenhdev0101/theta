@@ -37,9 +37,17 @@ Schedule::command('theta:thesis-assemble')
     ->withoutOverlapping();
 
 // Open executor: works the entry from the bell through the window close
-// (harness.thesis.entry.window_close_et, default 10:15 ET). The schedule runs
-// past the default close so the no-chase cancel/expire sweep always gets ticks
-// after the window shuts.
+// (harness.thesis.entry.window_close_et, default 10:15 ET), then sweeps.
+//
+// COUPLED TO harness.thesis.entry.window_close_et. These bounds are mirrored
+// in ThesisLaneConfig::SCHEDULE_OPEN_ET / SCHEDULE_SWEEP_CLOSE_ET, which clamp
+// a configured close that would land past this sweep window — otherwise a
+// resting gfd entry order gets zero cancel ticks and rests until 16:00.
+// Change the cron and those constants together, never one alone.
+//
+// withoutOverlapping only guards the scheduler against itself; a manual
+// `artisan theta:thesis-execute` can still run alongside a tick, which is why
+// the command holds its own atomic claim over the cancel-then-replace path.
 Schedule::command('theta:thesis-execute')
     ->weekdays()
     ->timezone('America/New_York')

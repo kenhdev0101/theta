@@ -57,7 +57,7 @@ class ThesisAssembleCommand extends Command
     use AssemblesHarnessConfig;
 
     protected $signature = 'theta:thesis-assemble
-        {--dry-run : Evaluate and print the decision per thesis WITHOUT writing any journal row. Read-only preview; bypasses the kill-switch arm gate so decisions can be inspected off-hours.}';
+        {--dry-run : Evaluate and print the decision per thesis WITHOUT writing any journal row. Read-only for the journal, but it still makes live broker reads, so every arm gate — including the kill switch — applies.}';
 
     protected $description = 'Derive today\'s thesis-lane slate plays against live quotes ahead of the open';
 
@@ -74,7 +74,11 @@ class ThesisAssembleCommand extends Command
             return self::SUCCESS;
         }
 
-        if (! $dryRun && (bool) ($cfg['kill_switch'] ?? true)) {
+        // --dry-run writes no journal rows, but it does hit the live broker
+        // (chains, instruments, quotes). An engaged kill switch disarms the
+        // whole lane, reads included — fail-closed consistency beats an
+        // off-hours preview convenience.
+        if ((bool) ($cfg['kill_switch'] ?? true)) {
             $this->warn('thesis assembly disarmed: kill switch engaged');
 
             return self::SUCCESS;
@@ -104,17 +108,21 @@ class ThesisAssembleCommand extends Command
         $data = AlpacaMarketDataClient::fromConfig($cfg);
         $selector = new ThesisContractSelector($client);
 
-        $maxOpen = max(0, (int) ($lane['max_open_positions'] ?? 0));
+        $maxOpen = ThesisLaneConfig::maxOpenPositions($cfg);
         $openPlays = $this->openThesisPlayCount();
         $assembled = 0;
         $skipped = 0;
+        // A dry run does not persist rows, so the per-underlying and
+        // concurrency checks would otherwise let the preview promise plays the
+        // live run would refuse. Track what the run has already committed to.
+        $engagedSymbols = [];
 
         if ($dryRun) {
             $this->info('DRY RUN — read-only slate preview. No journal rows written, no orders reviewed or placed.');
         }
 
         foreach ($theses as $thesis) {
-            $decision = $this->assembleOne($thesis, $cfg, $lane, $client, $data, $selector, $maxOpen, $openPlays, $dryRun);
+            $decision = $this->assembleOne($thesis, $cfg, $lane, $client, $data, $selector, $maxOpen, $openPlays, $dryRun, $engagedSymbols);
 
             $recorder->record('thesis_assembly', array_merge([
                 'event' => $decision['decision'] === 'ASSEMBLED' ? 'assembled' : 'skipped',
@@ -128,6 +136,7 @@ class ThesisAssembleCommand extends Command
             if ($decision['decision'] === 'ASSEMBLED') {
                 $assembled++;
                 $openPlays++;
+                $engagedSymbols[] = strtoupper($thesis->underlying_symbol);
                 $this->info(sprintf(
                     'thesis %d %s: %s %s @ %0.2f debit %0.2f%s',
                     $thesis->id,
@@ -172,6 +181,7 @@ class ThesisAssembleCommand extends Command
         int $maxOpen,
         int $openPlays,
         bool $dryRun,
+        array $engagedSymbols,
     ): array {
         $symbol = strtoupper($thesis->underlying_symbol);
 
@@ -179,13 +189,31 @@ class ThesisAssembleCommand extends Command
             return ['decision' => 'SKIP', 'reason' => 'existing_play_open'];
         }
 
-        if ($maxOpen > 0 && $openPlays >= $maxOpen) {
+        // Zero is a hard stop, never "unbounded": an unconfigured concurrency
+        // cap must not read as permission to open positions.
+        if ($maxOpen <= 0) {
+            return [
+                'decision' => 'SKIP',
+                'reason' => 'max_open_positions_unconfigured',
+                'max_open_positions' => $maxOpen,
+            ];
+        }
+
+        if ($openPlays >= $maxOpen) {
             return [
                 'decision' => 'SKIP',
                 'reason' => 'max_open_positions_reached',
                 'open_plays' => $openPlays,
                 'max_open_positions' => $maxOpen,
             ];
+        }
+
+        // The per-underlying debit rail counts POSITIONS, so two resting
+        // entry orders in the same name both pass it and both can fill —
+        // twice the precommitment. One live play per underlying, enforced
+        // where the second play would be created.
+        if (in_array($symbol, $engagedSymbols, true) || $this->hasLivePlayForUnderlying($symbol)) {
+            return ['decision' => 'SKIP', 'reason' => 'underlying_already_engaged', 'symbol' => $symbol];
         }
 
         $perPlayMaxDebit = ThesisLaneConfig::perPlayMaxDebit($cfg, (float) $thesis->max_debit);
@@ -211,8 +239,21 @@ class ThesisAssembleCommand extends Command
 
         $optionType = $thesis->structure === ThesisIntent::STRUCTURE_LONG_PUT ? 'put' : 'call';
 
+        // ThesisIntent::activationBlockers() checks the lane rails at
+        // AUTHORING time, but dte_floor/dte_ceiling can move afterwards. Clamp
+        // here too, or the config is inert on every already-active thesis.
+        $band = ThesisLaneConfig::clampDteBand($cfg, (int) $thesis->dte_min, (int) $thesis->dte_max);
+        if ($band['empty']) {
+            return [
+                'decision' => 'SKIP',
+                'reason' => 'dte_band_empty_after_lane_clamp',
+                'dte_band' => [$thesis->dte_min, $thesis->dte_max],
+                'dte_band_clamp' => $band,
+            ];
+        }
+
         try {
-            $expiration = $selector->chooseExpiration($symbol, (int) $thesis->dte_min, (int) $thesis->dte_max);
+            $expiration = $selector->chooseExpiration($symbol, $band['dte_min'], $band['dte_max']);
         } catch (\Throwable $e) {
             return ['decision' => 'SKIP', 'reason' => 'chain_read_blocker: '.$e->getMessage()];
         }
@@ -221,7 +262,8 @@ class ThesisAssembleCommand extends Command
             return [
                 'decision' => 'SKIP',
                 'reason' => (string) ($expiration['reason'] ?? 'no_expiration_in_dte_band'),
-                'dte_band' => [$thesis->dte_min, $thesis->dte_max],
+                'dte_band' => [$band['dte_min'], $band['dte_max']],
+                'dte_band_clamp' => $band,
             ];
         }
 
@@ -318,6 +360,7 @@ class ThesisAssembleCommand extends Command
             'per_play_max_debit' => $perPlayMaxDebit,
             'anchor_mid' => (float) $priced['mid'],
             'anchor_source' => $anchorSource,
+            'dte_band_clamp' => $band,
             'quote_age_seconds' => $quote['age_seconds'] ?? null,
             'quote_stale' => $quote['stale'] ?? null,
             'spread_bps' => $quote['spread_bps'] ?? null,
@@ -370,6 +413,7 @@ class ThesisAssembleCommand extends Command
                 'underlying_quote' => $underlying,
                 'selection' => [
                     'spot' => $spot,
+                    'dte_band_clamp' => $band,
                     'expiration' => $expiration,
                     'strike' => $strike,
                     'quote' => $quote,
@@ -414,6 +458,17 @@ class ThesisAssembleCommand extends Command
         return RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
             ->where('thesis_intent_id', $thesisIntentId)
+            ->whereIn('status', ThesisLaneConfig::NON_TERMINAL_PLAY_STATUSES)
+            ->exists();
+    }
+
+    /** One live thesis play per underlying — two theses on one name is 2x the cap. */
+    private function hasLivePlayForUnderlying(string $symbol): bool
+    {
+        return RobinhoodTradeJournal::query()
+            ->where('asset_class', 'option')
+            ->whereNotNull('thesis_intent_id')
+            ->where('underlying_symbol', strtoupper($symbol))
             ->whereIn('status', ThesisLaneConfig::NON_TERMINAL_PLAY_STATUSES)
             ->exists();
     }

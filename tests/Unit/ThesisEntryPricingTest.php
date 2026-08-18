@@ -71,7 +71,7 @@ class ThesisEntryPricingTest extends TestCase
         $this->assertSame('quote_crossed', ThesisEntryPricer::derive($this->quote(2.30, 2.20), 0.0)['reason']);
     }
 
-    public function test_entry_window_is_eastern_and_fails_closed_on_a_malformed_time(): void
+    public function test_entry_window_is_eastern_not_local(): void
     {
         $cfg = ['thesis' => ['entry' => ['window_close_et' => '10:15']]];
 
@@ -80,12 +80,89 @@ class ThesisEntryPricingTest extends TestCase
         $this->assertFalse(ThesisLaneConfig::withinEntryWindow($cfg, Carbon::parse('2026-08-17 10:15:00', 'America/New_York')));
         // Eastern, not local: 07:00 Pacific is 10:00 Eastern.
         $this->assertTrue(ThesisLaneConfig::withinEntryWindow($cfg, Carbon::parse('2026-08-17 07:00:00', 'America/Los_Angeles')));
+    }
 
-        $malformed = ['thesis' => ['entry' => ['window_close_et' => 'ten-fifteen']]];
-        $this->assertFalse(
-            ThesisLaneConfig::withinEntryWindow($malformed, Carbon::parse('2026-08-17 09:31:00', 'America/New_York')),
-            'a malformed window must fail closed, never work an entry all session',
-        );
+    public function test_window_close_is_clamped_to_the_scheduled_sweep_bound(): void
+    {
+        // The cron bound in routes/console.php is NOT env-configurable, so a
+        // close at or past it would leave a resting gfd order with zero cancel
+        // ticks after it — resting to 16:00 on a play the no-chase rule
+        // expired. Out-of-range and unparseable values clamp to the default
+        // and name why, rather than either running long or silently disabling
+        // the lane while the scheduler keeps ticking.
+        $cases = [
+            '10:30' => 'window_close_past_scheduled_sweep_bound',
+            '10:20' => 'window_close_past_scheduled_sweep_bound',
+            '09:15' => 'window_close_at_or_before_session_open',
+            'ten-fifteen' => 'window_close_unparseable',
+            '99:99' => 'window_close_unparseable',
+            '' => 'window_close_unconfigured',
+        ];
+
+        foreach ($cases as $configured => $reason) {
+            $resolved = ThesisLaneConfig::resolveWindowClose(['thesis' => ['entry' => ['window_close_et' => (string) $configured]]]);
+
+            $this->assertTrue($resolved['clamped'], "'{$configured}' should clamp");
+            $this->assertSame(ThesisLaneConfig::DEFAULT_WINDOW_CLOSE_ET, $resolved['value']);
+            $this->assertSame($reason, $resolved['reason']);
+        }
+
+        $inRange = ThesisLaneConfig::resolveWindowClose(['thesis' => ['entry' => ['window_close_et' => '10:00']]]);
+        $this->assertFalse($inRange['clamped']);
+        $this->assertSame('10:00', $inRange['value']);
+
+        // The invariant the clamp exists to hold, asserted directly.
+        $sweepBound = (int) ThesisLaneConfig::minutesFromEtTime(ThesisLaneConfig::SCHEDULE_SWEEP_CLOSE_ET);
+        foreach (array_merge(array_keys($cases), ['10:00', '09:45']) as $configured) {
+            $resolved = ThesisLaneConfig::resolveWindowClose(['thesis' => ['entry' => ['window_close_et' => (string) $configured]]]);
+            $this->assertLessThanOrEqual(
+                $sweepBound - ThesisLaneConfig::SWEEP_MARGIN_MINUTES,
+                $resolved['minutes'],
+                "'{$configured}' resolved past the scheduled sweep bound",
+            );
+        }
+    }
+
+    public function test_zero_max_open_positions_is_a_hard_stop(): void
+    {
+        $this->assertSame(0, ThesisLaneConfig::maxOpenPositions(['thesis' => ['max_open_positions' => 0]]));
+        $this->assertSame(0, ThesisLaneConfig::maxOpenPositions(['thesis' => []]));
+        $this->assertSame(0, ThesisLaneConfig::maxOpenPositions(['thesis' => ['max_open_positions' => -4]]));
+        $this->assertSame(3, ThesisLaneConfig::maxOpenPositions(['thesis' => ['max_open_positions' => 3]]));
+    }
+
+    public function test_dte_band_is_clamped_to_the_lane_rails(): void
+    {
+        $cfg = ['thesis' => ['dte_floor' => 14, 'dte_ceiling' => 40]];
+
+        $clamped = ThesisLaneConfig::clampDteBand($cfg, 30, 70);
+        $this->assertSame(30, $clamped['dte_min']);
+        $this->assertSame(40, $clamped['dte_max']);
+        $this->assertTrue($clamped['clamped']);
+        $this->assertFalse($clamped['empty']);
+
+        $raised = ThesisLaneConfig::clampDteBand($cfg, 3, 20);
+        $this->assertSame(14, $raised['dte_min']);
+        $this->assertSame(20, $raised['dte_max']);
+
+        $untouched = ThesisLaneConfig::clampDteBand($cfg, 20, 35);
+        $this->assertFalse($untouched['clamped']);
+
+        $this->assertTrue(ThesisLaneConfig::clampDteBand(['thesis' => ['dte_ceiling' => 10]], 30, 70)['empty']);
+    }
+
+    public function test_supervision_is_strictly_wider_than_the_repeg_claim_set(): void
+    {
+        // Everything a re-peg may claim must also be supervised, and blocked
+        // plays must be supervised without being claimable.
+        foreach (ThesisLaneConfig::WORKING_STATUSES as $status) {
+            $this->assertContains($status, ThesisLaneConfig::SUPERVISED_STATUSES);
+        }
+
+        $this->assertContains(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, ThesisLaneConfig::SUPERVISED_STATUSES);
+        $this->assertContains(ThesisLaneConfig::STATUS_REPEGGING, ThesisLaneConfig::SUPERVISED_STATUSES);
+        $this->assertNotContains(ThesisLaneConfig::STATUS_ENTRY_BLOCKED, ThesisLaneConfig::WORKING_STATUSES);
+        $this->assertNotContains(ThesisLaneConfig::STATUS_REPEGGING, ThesisLaneConfig::WORKING_STATUSES);
     }
 
     public function test_per_play_cap_is_the_tighter_of_thesis_and_lane(): void
