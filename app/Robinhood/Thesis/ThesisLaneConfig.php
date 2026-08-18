@@ -60,6 +60,15 @@ final class ThesisLaneConfig
      */
     public const STATUS_ENTRY_BLOCKED = 'thesis_entry_blocked';
 
+    /**
+     * The entry order filled, so there is no resting order left to supervise
+     * and the row leaves SUPERVISED_STATUSES. The lane does NOT claim the
+     * terminal write: `theta:option-reconcile` owns the `filled` status,
+     * quantity and price from broker truth. This status is the gap between
+     * the two, and it exists so supervision stops re-stamping a fill forever.
+     */
+    public const STATUS_ENTRY_FILLED = 'thesis_entry_filled';
+
     /** Entry window shut with no live order left. Terminal for the day. */
     public const STATUS_EXPIRED_UNFILLED = 'expired_unfilled';
 
@@ -76,6 +85,7 @@ final class ThesisLaneConfig
         self::STATUS_CLAIMED,
         self::STATUS_REPEGGING,
         self::STATUS_ENTRY_BLOCKED,
+        self::STATUS_ENTRY_FILLED,
         'submitted',
         'open',
         'partially_filled',
@@ -115,6 +125,18 @@ final class ThesisLaneConfig
 
     /** Broker order states that prove the order is done and filled. @var list<string> */
     public const FILLED_ORDER_STATES = ['filled'];
+
+    /**
+     * Broker order states that mean the order is still working. Orphan
+     * adoption requires one of these explicitly rather than "not dead", so an
+     * unrecognised state is never adopted and then cancelled.
+     *
+     * @var list<string>
+     */
+    public const OPEN_ORDER_STATES = [
+        'queued', 'unconfirmed', 'confirmed', 'placed', 'pending',
+        'pending_cancel', 'partially_filled', 'open', 'new', 'accepted',
+    ];
 
     /**
      * The scheduled sweep bounds in routes/console.php. `window_close_et` is

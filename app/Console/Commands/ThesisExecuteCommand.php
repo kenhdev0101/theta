@@ -214,10 +214,12 @@ class ThesisExecuteCommand extends Command
 
         // The operator parking or closing a thesis is a kill surface: it must
         // reach a live entry order on the very next tick, ahead of the reprice
-        // cadence and regardless of the window.
+        // cadence and regardless of the window. isEnterable() is the same
+        // predicate the fresh-entry path uses, so a passed time stop stands the
+        // play down too rather than only a status change.
         $thesis = $this->thesisFor($row);
-        if (! $thesis instanceof ThesisIntent || $thesis->status !== ThesisIntent::STATUS_ACTIVE) {
-            return $this->standDown($row, $client, $recorder, $cancelCapable);
+        if (! $thesis instanceof ThesisIntent || ! $thesis->isEnterable()) {
+            return $this->standDown($row, $client, $recorder, $cancelCapable, $thesis);
         }
 
         return $withinWindow
@@ -286,6 +288,11 @@ class ThesisExecuteCommand extends Command
      * chase. Look for a matching open order on the same contract and adopt it
      * so normal supervision can cancel it. Absence is never treated as proof:
      * the play stays blocked for reconciliation.
+     *
+     * The match is deliberately narrow — same contract, side BUY, position
+     * effect OPEN, and an explicitly open broker state. The operator manages
+     * positions by hand, so a resting manual sell-to-close on the same
+     * contract must never be adopted here and cancelled on the next tick.
      */
     private function adoptOrphanOrder(RobinhoodTradeJournal $row, RobinhoodMcpClient $client, JsonlRecorder $recorder): string
     {
@@ -302,15 +309,22 @@ class ThesisExecuteCommand extends Command
         }
 
         foreach ($orders as $order) {
-            if (! is_array($order)) {
+            if (! is_array($order) || $optionId === '') {
                 continue;
             }
             $state = strtolower((string) ($order['state'] ?? $order['status'] ?? ''));
-            if (in_array($state, ThesisLaneConfig::DEAD_ORDER_STATES, true) || $state === '') {
+            if (! in_array($state, ThesisLaneConfig::OPEN_ORDER_STATES, true)) {
                 continue;
             }
             foreach ((array) ($order['legs'] ?? []) as $leg) {
-                if (! is_array($leg) || (string) ($leg['option_id'] ?? '') !== $optionId || $optionId === '') {
+                if (! is_array($leg) || (string) ($leg['option_id'] ?? '') !== $optionId) {
+                    continue;
+                }
+                // Only our own shape of order: buy-to-open on this contract.
+                if (strtolower((string) ($leg['side'] ?? '')) !== 'buy') {
+                    continue;
+                }
+                if (strtolower((string) ($leg['position_effect'] ?? '')) !== 'open') {
                     continue;
                 }
 
@@ -334,10 +348,13 @@ class ThesisExecuteCommand extends Command
         return 'blocked';
     }
 
-    /** The operator parked or closed the thesis: kill the live entry order. */
-    private function standDown(RobinhoodTradeJournal $row, RobinhoodMcpClient $client, JsonlRecorder $recorder, bool $cancelCapable): string
+    /** The thesis is parked, closed, or past its time stop: kill the live entry order. */
+    private function standDown(RobinhoodTradeJournal $row, RobinhoodMcpClient $client, JsonlRecorder $recorder, bool $cancelCapable, ?ThesisIntent $thesis): string
     {
-        return $this->closeOutRestingOrder($row, $client, $recorder, $cancelCapable, 'thesis_stood_down');
+        return $this->closeOutRestingOrder($row, $client, $recorder, $cancelCapable, 'thesis_stood_down', [
+            'thesis_status' => $thesis?->status,
+            'thesis_time_stop_date' => $thesis?->time_stop_date?->toDateString(),
+        ]);
     }
 
     // ── Working (resting) order ──────────────────────────────────────────
@@ -478,6 +495,9 @@ class ThesisExecuteCommand extends Command
             'to_limit_price' => $newLimit,
         ]);
 
+        // Phase boundary: the cancel + verify poll can burn minutes.
+        $this->heartbeatClaim($row);
+
         return $this->submit(
             $row, $cfg, $laneCfg, $client, $recorder, $resolution, $newLimit, 'repegged',
             priorDebit: (float) ($row->dollar_amount ?? 0.0),
@@ -495,10 +515,11 @@ class ThesisExecuteCommand extends Command
         JsonlRecorder $recorder,
         bool $cancelCapable,
         string $reason,
+        array $detail = [],
     ): string {
         $brokerOrderId = (string) ($row->broker_order_id ?? '');
         if ($brokerOrderId === '') {
-            $this->markBlocked($row, $recorder, 'broker_order_id_missing', ['close_out_reason' => $reason]);
+            $this->markBlocked($row, $recorder, 'broker_order_id_missing', array_merge($detail, ['close_out_reason' => $reason]));
 
             return 'blocked';
         }
@@ -535,7 +556,7 @@ class ThesisExecuteCommand extends Command
         }
 
         if ($cancel['state'] !== 'cancelled') {
-            $this->markBlocked($row, $recorder, 'cancel_unconfirmed', array_merge($cancel, [
+            $this->markBlocked($row, $recorder, 'cancel_unconfirmed', array_merge($cancel, $detail, [
                 'broker_order_id' => $brokerOrderId,
                 'close_out_reason' => $reason,
             ]));
@@ -543,10 +564,10 @@ class ThesisExecuteCommand extends Command
             return 'blocked';
         }
 
-        $this->markExpired($row, $recorder, $reason, [
+        $this->markExpired($row, $recorder, $reason, array_merge($detail, [
             'broker_order_id' => $brokerOrderId,
             'broker_state' => $cancel['broker_state'] ?? null,
-        ]);
+        ]));
 
         return 'expired';
     }
@@ -679,6 +700,13 @@ class ThesisExecuteCommand extends Command
             return false;
         }
 
+        // Heartbeat: the broker-context assemble is the longest read in the
+        // critical section. Without this the stale-claim recovery could see a
+        // LIVE claim as abandoned and hand the row to a concurrent invocation
+        // mid-placement — the double-order race, reintroduced through the
+        // recovery timer.
+        $this->heartbeatClaim($row);
+
         if ($priorDebit > 0.0 && is_numeric($context['options_spent_today_debit'] ?? null)) {
             $context['options_spent_today_debit'] = round(max(0.0, (float) $context['options_spent_today_debit'] - $priorDebit), 2);
         }
@@ -697,6 +725,7 @@ class ThesisExecuteCommand extends Command
         }
 
         $executor = new OptionExecutor($client, new OptionRailPipeline, new OrderRefStore, $recorder, $laneCfg);
+        $this->heartbeatClaim($row);
 
         try {
             // requireMarketableBuy: false — a thesis entry is worked inside
@@ -705,16 +734,32 @@ class ThesisExecuteCommand extends Command
         } catch (\Throwable $e) {
             // A throw around the place call is NOT proof the order was
             // rejected: a timeout after the broker accepted it looks the same.
-            $this->markUnconfirmedPlacement($row, $recorder, $e->getMessage(), $limit);
+            $this->markUnconfirmedPlacement($row, $recorder, $e->getMessage(), $limit, $priorOrderConfirmedDead);
 
             return false;
         }
 
         if ($result['classification'] !== 'LIVE_POSTED_NOT_FILLED') {
-            // Every rail abort happens BEFORE the place call, so no order
-            // exists from this attempt.
+            $blockReasons = (array) $result['verdict']->blockReasons();
+
+            // The duplicate gate is the one pre-place block that is affirmative
+            // evidence of a LIVE order on this contract — our own already-placed
+            // ref, or an open broker order on the same option. Routing that to
+            // abandonSubmit would null the order id, return the play to
+            // placeable, and eventually retire it while the order rests.
+            if ($this->isDuplicateEvidenceBlock($blockReasons)) {
+                $this->markBlocked($row, $recorder, 'duplicate_open_order_detected', [
+                    'block_reasons' => $blockReasons,
+                    'limit_price' => $limit,
+                ], clearBrokerOrderId: $priorOrderConfirmedDead);
+
+                return false;
+            }
+
+            // Every other rail abort happens BEFORE the place call, so no
+            // order exists from this attempt.
             $this->abandonSubmit($row, $recorder, 'rail_block: '.$result['verdict']->verdict(), $priorOrderConfirmedDead, [
-                'block_reasons' => $result['verdict']->blockReasons(),
+                'block_reasons' => $blockReasons,
                 'limit_price' => $limit,
             ]);
 
@@ -801,15 +846,45 @@ class ThesisExecuteCommand extends Command
      * The place call threw. The order may or may not be live at the broker, so
      * the play is blocked (never re-placed) but stays supervised, and its
      * debit stays on the books until broker truth says otherwise.
+     *
+     * On the RE-PEG path the row still carries the id of the prior order,
+     * which is already proven dead. Leaving it there would send the next
+     * supervision tick to readOrderState(prior), read `cancelled`, and retire
+     * the play as "no exposure remains" — while the order the broker may have
+     * just accepted rests gfd until 16:00, unsupervised. So the dead id is
+     * retired and the row is pushed onto the orphan-adoption path instead.
      */
-    private function markUnconfirmedPlacement(RobinhoodTradeJournal $row, JsonlRecorder $recorder, string $error, float $limit): void
-    {
+    private function markUnconfirmedPlacement(
+        RobinhoodTradeJournal $row,
+        JsonlRecorder $recorder,
+        string $error,
+        float $limit,
+        bool $priorOrderConfirmedDead = false,
+    ): void {
         $this->markBlocked($row, $recorder, 'place_unconfirmed_after_throw', [
             'detail' => $error,
             'limit_price' => $limit,
             'requires_operator_reconcile' => true,
-        ]);
+        ], clearBrokerOrderId: $priorOrderConfirmedDead);
         $this->error("thesis play {$row->id}: placement outcome unconfirmed: {$error}");
+    }
+
+    /**
+     * True when a rail verdict blocked on the duplicate gate — the only
+     * pre-place gate whose block means "an order for this play may already be
+     * live", rather than "nothing was sent".
+     *
+     * @param  list<string>  $blockReasons  "{gate}:{reason}" strings
+     */
+    private function isDuplicateEvidenceBlock(array $blockReasons): bool
+    {
+        foreach ($blockReasons as $reason) {
+            if (str_starts_with((string) $reason, 'duplicate:')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ── Broker cancel ────────────────────────────────────────────────────
@@ -1028,6 +1103,21 @@ class ThesisExecuteCommand extends Command
         return true;
     }
 
+    /**
+     * Keep a claim held by THIS invocation from ageing into the stale-claim
+     * recovery window. The critical section's worst case (cancel + poll +
+     * broker-context assemble + review + place, each at the transport timeout)
+     * exceeds STALE_CLAIM_MINUTES, so without heartbeats a concurrent
+     * invocation could recover a live claim and double-place.
+     */
+    private function heartbeatClaim(RobinhoodTradeJournal $row): void
+    {
+        RobinhoodTradeJournal::query()
+            ->whereKey($row->id)
+            ->whereIn('status', [ThesisLaneConfig::STATUS_REPEGGING, ThesisLaneConfig::STATUS_CLAIMED])
+            ->update(['updated_at' => now()]);
+    }
+
     private function releaseRepegClaim(RobinhoodTradeJournal $row): void
     {
         $row->refresh();
@@ -1104,6 +1194,9 @@ class ThesisExecuteCommand extends Command
 
         $entry['placed_at'] = now()->toISOString();
         $entry['working_limit_price'] = $limit;
+        // The failure counter bounds CONSECUTIVE pre-place failures; a landed
+        // order clears it so a play that recovers is not retired for history.
+        $entry['place_attempts_failed'] = 0;
         unset($entry['repeg_prior_status']);
         $placements = (array) ($entry['placements'] ?? []);
         $placements[] = [
@@ -1122,22 +1215,38 @@ class ThesisExecuteCommand extends Command
         ])->save();
     }
 
-    private function markBlocked(RobinhoodTradeJournal $row, JsonlRecorder $recorder, string $reason, array $detail = []): void
+    /**
+     * @param  bool  $clearBrokerOrderId  retire a broker order id that is already
+     *                                    proven dead, so supervision cannot read it back as
+     *                                    "cancelled, no exposure" and retire the play while a
+     *                                    newer, unconfirmed order is still resting.
+     */
+    private function markBlocked(RobinhoodTradeJournal $row, JsonlRecorder $recorder, string $reason, array $detail = [], bool $clearBrokerOrderId = false): void
     {
         $row->refresh();
         $notes = (array) ($row->notes ?? []);
         $entry = (array) ($notes['thesis_entry'] ?? []);
         $entry['blocked'] = array_merge($detail, ['reason' => $reason, 'at' => now()->toISOString()]);
         unset($entry['repeg_prior_status']);
-        $notes['thesis_entry'] = $entry;
 
-        $row->forceFill([
+        $updates = [
             // Still inside SUPERVISED_STATUSES: blocked stops the re-peg, it
             // never stops the lane watching a possibly-live order.
             'status' => ThesisLaneConfig::STATUS_ENTRY_BLOCKED,
             'strategy_label' => ThesisLaneConfig::STRATEGY_LABEL,
-            'notes' => $notes,
-        ])->save();
+        ];
+
+        if ($clearBrokerOrderId && ($row->broker_order_id ?? '') !== '') {
+            $prior = (array) ($entry['prior_broker_order_ids'] ?? []);
+            $prior[] = (string) $row->broker_order_id;
+            $entry['prior_broker_order_ids'] = array_values(array_unique($prior));
+            $entry['blocked']['retired_broker_order_id'] = (string) $row->broker_order_id;
+            $updates['broker_order_id'] = null;
+        }
+
+        $notes['thesis_entry'] = $entry;
+        $updates['notes'] = $notes;
+        $row->forceFill($updates)->save();
 
         $this->record($recorder, $row, 'blocked', 'UNKNOWN_EXECUTION_STATE', array_merge($detail, ['reason' => $reason]));
         $this->error("thesis play {$row->id}: blocked — {$reason}");
@@ -1163,25 +1272,42 @@ class ThesisExecuteCommand extends Command
         $this->warn("thesis play {$row->id}: expired unfilled — {$reason}");
     }
 
+    /**
+     * The entry order filled. There is no resting order left, so the play
+     * leaves the supervised set — otherwise every later tick would re-stamp
+     * the same fill and keep a stale blocked flag on an open position. The
+     * terminal `filled` write still belongs to theta:option-reconcile, which
+     * owns the quantities and prices from broker truth.
+     */
     private function recordFillDuringCancel(RobinhoodTradeJournal $row, JsonlRecorder $recorder, array $cancel, string $brokerOrderId): void
     {
         $row->refresh();
         $notes = (array) ($row->notes ?? []);
         $entry = (array) ($notes['thesis_entry'] ?? []);
-        $entry['filled_during_cancel'] = [
-            'at' => now()->toISOString(),
-            'broker_order_id' => $brokerOrderId,
-            'broker_state' => $cancel['broker_state'] ?? null,
-        ];
-        unset($entry['repeg_prior_status']);
+        $alreadyStamped = is_array($entry['filled_during_cancel'] ?? null);
+
+        if (! $alreadyStamped) {
+            $entry['filled_during_cancel'] = [
+                'at' => now()->toISOString(),
+                'broker_order_id' => $brokerOrderId,
+                'broker_state' => $cancel['broker_state'] ?? null,
+            ];
+        }
+        // Supervision is done: nothing is resting and the blocked flag would
+        // otherwise sit on an open position forever.
+        unset($entry['repeg_prior_status'], $entry['blocked']);
         $notes['thesis_entry'] = $entry;
+
         $row->forceFill([
+            'status' => ThesisLaneConfig::STATUS_ENTRY_FILLED,
             'notes' => $notes,
             'strategy_label' => ThesisLaneConfig::STRATEGY_LABEL,
         ])->save();
 
-        // Broker truth outranks this lane: theta:option-reconcile owns the
-        // fill quantities, prices, and terminal status.
+        if ($alreadyStamped) {
+            return;
+        }
+
         $this->record($recorder, $row, 'filled', 'LIVE_FILLED', [
             'reason' => 'filled_before_cancel_landed',
             'broker_order_id' => $brokerOrderId,
