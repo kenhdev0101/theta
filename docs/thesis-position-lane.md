@@ -165,7 +165,39 @@ default-off behind the lane flag until the arm checklist clears.
 - [ ] `HARNESS_MODE` semantics for the lane: approval mode explicit (current env says `auto` — must not leak into this lane)
 - [ ] First slate: operator-authored theses (model-drafted slates are a later slice)
 
-## 7. Non-goals
+## 7. Build status (as of 2026-08-18 ~02:00 PT)
+
+Slices S1 (schema/CLI/park), S3 (assembly), and S5 (executor) are BUILT and
+review-certified. Commits: 51513f5 (S1), a11e9c6/6953626/ef8279f (S3+S5),
+82051c9/54825e3/948f3fb (review round-1 fixes), f56dee8/c40b0f8 (round-2
+fixes). Review record: two-round adversarial pass — round 1 found 3 blockers
+(re-peg double-order race, blocked-play abandonment with a live gfd order,
+scalp exit engine liquidating thesis positions) + 7 majors, all fixed; round 2
+verified every fix against its original attack and caught 1 new blocker in a
+fix (re-peg place-throw retiring the play on the stale cancelled order id)
++ 3 majors, all fixed and verified by focused arbiter review. Final gates:
+302 tests / 3128 assertions, PHPStan zero findings in every lane file, Pint
+clean. Live-verified read-only: OAuth grant (expires 2026-08-25T15:59:21Z),
+`cancel_option_order` present in the 54-tool production inventory, and three
+assembly dry-runs against live quotes each ending in a correct named skip.
+
+Mode 1 semantics locked: operator authoring + `--activate` IS the standing
+approval; the machine assembles at 08:45 ET (fallback tick 09:31), works the
+fill 09:30–10:15, and supervises every order to broker-confirmed death.
+Mode 2 (model-drafted theses -> draft + push -> one-tap arm) is designed
+(§3), not yet built. S2 (OAuth refresh), S4 (slate page/push), S6 (lifecycle
+monitor for held positions) remain.
+
+Arm checklist (operator): capital top-up (account read $14.07 on
+2026-08-17); author real theses via `theta:thesis-add ... --activate`
+(max_debit must cover the name's premium AND fit the lane per-play cap,
+default $500 — raise via HARNESS_THESIS_PER_PLAY_MAX_DEBIT if the thesis
+warrants); set `HARNESS_THESIS_ENABLED=true` in `.env`; start the scheduler
+(`docker compose -p theta up -d scheduler`) with the Mac awake through the
+entry window. Positions entered before S6 lands are watched by the operator —
+kill triggers on HELD positions are not yet machine-evaluated.
+
+## 8. Non-goals
 
 - No spreads/short premium until an explicit later pass (Level 2 boundary).
 - No auto mode in v1; no loosening EV/kill-trigger rules for volume.
