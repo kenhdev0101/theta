@@ -37,13 +37,30 @@ final class ThesisLaneConfig
     /** Assembly wrote a derived contract + limit; the executor may place it. */
     public const STATUS_ASSEMBLED = 'thesis_assembled';
 
-    /** Claimed by an executor tick (double-processing guard). */
+    /** Claimed by an executor tick for a FIRST placement (double-processing guard). */
     public const STATUS_CLAIMED = 'thesis_claimed';
 
-    /** The lane refuses to act further without an operator/reconcile answer. */
+    /**
+     * Claimed by an executor tick for a cancel-then-replace, held across the
+     * whole critical section. `withoutOverlapping` only guards the scheduler
+     * against itself, so a manual `artisan theta:thesis-execute` alongside a
+     * scheduled tick could otherwise have both invocations cancel order A
+     * (the second cancel of an already-cancelled order reads back `cancelled`,
+     * i.e. clear-to-replace) and both place — two live buy-to-open orders,
+     * one an untracked orphan. This status is the mutex.
+     */
+    public const STATUS_REPEGGING = 'thesis_repegging';
+
+    /**
+     * The lane will not re-peg or re-place this play. It does NOT mean the
+     * lane stops watching. A blocked play can still have a live gfd order at
+     * the broker — which would otherwise fill at 15:59 on a play the no-chase
+     * rule already expired — so blocked rows stay in SUPERVISED_STATUSES and
+     * leave the lane only when broker truth proves no live order remains.
+     */
     public const STATUS_ENTRY_BLOCKED = 'thesis_entry_blocked';
 
-    /** Entry window shut with no fill. Terminal for the day. */
+    /** Entry window shut with no live order left. Terminal for the day. */
     public const STATUS_EXPIRED_UNFILLED = 'expired_unfilled';
 
     public const STRATEGY_LABEL = 'thesis_position';
@@ -57,6 +74,7 @@ final class ThesisLaneConfig
     public const NON_TERMINAL_PLAY_STATUSES = [
         self::STATUS_ASSEMBLED,
         self::STATUS_CLAIMED,
+        self::STATUS_REPEGGING,
         self::STATUS_ENTRY_BLOCKED,
         'submitted',
         'open',
@@ -68,19 +86,51 @@ final class ThesisLaneConfig
     public const PLACEABLE_STATUSES = [self::STATUS_ASSEMBLED];
 
     /**
-     * Rows with a live entry order at the broker. `submitted` is what the
-     * executor writes; `theta:option-reconcile` promotes it to `open` /
-     * `partially_filled` from broker truth, so all three are "working".
+     * Quiescent rows with a live entry order and nobody mid-flight — the only
+     * rows a re-peg may claim. `submitted` is what the executor writes;
+     * `theta:option-reconcile` promotes it to `open` / `partially_filled` from
+     * broker truth.
      *
      * @var list<string>
      */
     public const WORKING_STATUSES = ['submitted', 'open', 'partially_filled'];
 
-    /** Broker order states that prove a cancel landed. @var list<string> */
-    public const CANCELLED_ORDER_STATES = ['cancelled', 'canceled', 'rejected'];
+    /**
+     * Every row the lane must keep watching because a live broker order may
+     * still exist. Supervision is what guarantees no order outlives the entry
+     * window; it is strictly wider than the set a re-peg may claim.
+     *
+     * @var list<string>
+     */
+    public const SUPERVISED_STATUSES = [
+        'submitted',
+        'open',
+        'partially_filled',
+        self::STATUS_REPEGGING,
+        self::STATUS_ENTRY_BLOCKED,
+    ];
+
+    /** Broker order states that prove no exposure remains. @var list<string> */
+    public const DEAD_ORDER_STATES = ['cancelled', 'canceled', 'rejected', 'expired'];
 
     /** Broker order states that prove the order is done and filled. @var list<string> */
     public const FILLED_ORDER_STATES = ['filled'];
+
+    /**
+     * The scheduled sweep bounds in routes/console.php. `window_close_et` is
+     * env-configurable but the schedule is not, so a close past the sweep
+     * bound would leave a resting gfd order with ZERO cancel ticks — it would
+     * rest to 16:00 ET. resolveWindowClose() clamps against these; change one
+     * and you must change the other.
+     */
+    public const SCHEDULE_OPEN_ET = '9:30';
+
+    public const SCHEDULE_SWEEP_CLOSE_ET = '10:20';
+
+    /** Minimum minutes of sweep ticks that must exist after the window shuts. */
+    public const SWEEP_MARGIN_MINUTES = 5;
+
+    public const DEFAULT_WINDOW_CLOSE_ET = '10:15';
 
     /** The lane block. */
     public static function lane(array $cfg): array
@@ -94,11 +144,59 @@ final class ThesisLaneConfig
         return (array) (self::lane($cfg)['entry'] ?? []);
     }
 
+    /**
+     * Resolve `window_close_et` against the scheduled sweep bound, fail-closed.
+     *
+     * The entry window is env-configurable; the cron in routes/console.php is
+     * not. A configured close at or past SCHEDULE_SWEEP_CLOSE_ET would leave a
+     * resting gfd entry order with no cancel tick after it, so it would rest
+     * until the 16:00 close and could fill hours after the no-chase rule said
+     * the play expired. An out-of-range or unparseable value therefore clamps
+     * to DEFAULT_WINDOW_CLOSE_ET and reports why.
+     *
+     * @return array{value: string, minutes: int, configured: string, clamped: bool, reason: string|null}
+     */
+    public static function resolveWindowClose(array $cfg): array
+    {
+        $configured = trim((string) (self::entry($cfg)['window_close_et'] ?? ''));
+        $default = self::DEFAULT_WINDOW_CLOSE_ET;
+        $defaultMinutes = (int) self::minutesFromEtTime($default);
+
+        $clamp = static fn (string $reason): array => [
+            'value' => $default,
+            'minutes' => $defaultMinutes,
+            'configured' => $configured,
+            'clamped' => true,
+            'reason' => $reason,
+        ];
+
+        $minutes = self::minutesFromEtTime($configured);
+        if ($minutes === null) {
+            return $clamp($configured === '' ? 'window_close_unconfigured' : 'window_close_unparseable');
+        }
+
+        $open = (int) self::minutesFromEtTime(self::SCHEDULE_OPEN_ET);
+        if ($minutes <= $open) {
+            return $clamp('window_close_at_or_before_session_open');
+        }
+
+        $latest = (int) self::minutesFromEtTime(self::SCHEDULE_SWEEP_CLOSE_ET) - self::SWEEP_MARGIN_MINUTES;
+        if ($minutes > $latest) {
+            return $clamp('window_close_past_scheduled_sweep_bound');
+        }
+
+        return [
+            'value' => $configured,
+            'minutes' => $minutes,
+            'configured' => $configured,
+            'clamped' => false,
+            'reason' => null,
+        ];
+    }
+
     public static function windowCloseEt(array $cfg): string
     {
-        $value = trim((string) (self::entry($cfg)['window_close_et'] ?? ''));
-
-        return $value === '' ? '10:15' : $value;
+        return self::resolveWindowClose($cfg)['value'];
     }
 
     public static function repriceSeconds(array $cfg): int
@@ -112,20 +210,15 @@ final class ThesisLaneConfig
     }
 
     /**
-     * True while the Eastern wall clock is before the configured window close.
-     * A malformed value fails closed (window already shut) rather than
-     * silently working an entry all session.
+     * True while the Eastern wall clock is before the resolved window close.
+     * A malformed value clamps to the default rather than either running all
+     * session or shutting the lane out entirely.
      */
     public static function withinEntryWindow(array $cfg, ?Carbon $now = null): bool
     {
         $et = ($now ?? Carbon::now())->copy()->setTimezone('America/New_York');
-        $close = self::minutesFromEtTime(self::windowCloseEt($cfg));
 
-        if ($close === null) {
-            return false;
-        }
-
-        return ($et->hour * 60 + $et->minute) < $close;
+        return ($et->hour * 60 + $et->minute) < self::resolveWindowClose($cfg)['minutes'];
     }
 
     /** Minutes past Eastern midnight for an "H:MM" / "HH:MM" string, or null. */
@@ -143,6 +236,42 @@ final class ThesisLaneConfig
         }
 
         return $hour * 60 + $minute;
+    }
+
+    /**
+     * Concurrency ceiling. Zero (or unconfigured) is a HARD STOP, never
+     * "unbounded" — an unset cap must not read as permission to open.
+     */
+    public static function maxOpenPositions(array $cfg): int
+    {
+        return max(0, (int) (self::lane($cfg)['max_open_positions'] ?? 0));
+    }
+
+    /**
+     * Clamp a thesis's own DTE band to the lane's guard rails. Without this
+     * the dte_floor/dte_ceiling config is inert: the assembler would honour a
+     * thesis band that reaches below the floor into short-dated spread noise
+     * (the scalp lane's loss engine) or above the ceiling into LEAPS.
+     *
+     * @return array{dte_min: int, dte_max: int, floor: int, ceiling: int, clamped: bool, empty: bool}
+     */
+    public static function clampDteBand(array $cfg, int $dteMin, int $dteMax): array
+    {
+        $lane = self::lane($cfg);
+        $floor = max(0, (int) ($lane['dte_floor'] ?? 0));
+        $ceiling = max(0, (int) ($lane['dte_ceiling'] ?? 0));
+
+        $min = $floor > 0 ? max($dteMin, $floor) : $dteMin;
+        $max = $ceiling > 0 ? min($dteMax, $ceiling) : $dteMax;
+
+        return [
+            'dte_min' => $min,
+            'dte_max' => $max,
+            'floor' => $floor,
+            'ceiling' => $ceiling,
+            'clamped' => $min !== $dteMin || $max !== $dteMax,
+            'empty' => $max < $min,
+        ];
     }
 
     /** The per-play debit ceiling for one thesis: the tighter of the two precommitments. */
