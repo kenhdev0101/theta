@@ -753,11 +753,18 @@ class OptionIntentProducerCommand extends Command
     }
 
     /**
-     * Thesis-lane ownership stamp for a held contract, or null when the scalp
-     * lane may manage it. Matched on either the journal linkage or the lane's
-     * strategy label so a row that lost one still trips the other.
+     * Thesis-lane ownership stamp for a HELD contract, or null when the scalp
+     * lane may manage it.
      *
-     * @return array{thesis_intent_id: int|null, journal_id: int, strategy_label: string|null}|null
+     * Attribution runs against the row that actually opened the position — the
+     * most recent filled buy-to-open, falling back to the most recent working
+     * one — and only then asks which lane that row belongs to. Matching any
+     * row that merely carries the option id would let a stale thesis row (an
+     * expired-unfilled entry from a previous week, on a contract the scalp
+     * lane later bought itself) disable the scalp lane's own protective stop
+     * on its own position.
+     *
+     * @return array{thesis_intent_id: int|null, journal_id: int, strategy_label: string|null, owner_status: string}|null
      */
     private function thesisLaneOwner(string $optionId): ?array
     {
@@ -765,17 +772,28 @@ class OptionIntentProducerCommand extends Command
             return null;
         }
 
-        $row = RobinhoodTradeJournal::query()
+        $opener = fn (array $statuses): ?RobinhoodTradeJournal => RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
             ->where('option_id', $optionId)
-            ->where(function ($query): void {
-                $query->whereNotNull('thesis_intent_id')
-                    ->orWhere('strategy_label', ThesisLaneConfig::STRATEGY_LABEL);
-            })
+            ->where('side', 'buy')
+            ->where('position_effect', 'open')
+            ->whereIn('status', $statuses)
             ->latest('id')
-            ->first(['id', 'thesis_intent_id', 'strategy_label']);
+            ->first(['id', 'status', 'thesis_intent_id', 'strategy_label']);
+
+        $row = $opener(['filled'])
+            ?? $opener(['open', 'partially_filled', 'submitted', ThesisLaneConfig::STATUS_ENTRY_FILLED]);
 
         if (! $row instanceof RobinhoodTradeJournal) {
+            // No journal row claims this position; the scalp lane's existing
+            // broker-position behaviour is unchanged.
+            return null;
+        }
+
+        $thesisOwned = $row->thesis_intent_id !== null
+            || $row->strategy_label === ThesisLaneConfig::STRATEGY_LABEL;
+
+        if (! $thesisOwned) {
             return null;
         }
 
@@ -783,6 +801,7 @@ class OptionIntentProducerCommand extends Command
             'thesis_intent_id' => $row->thesis_intent_id,
             'journal_id' => $row->id,
             'strategy_label' => $row->strategy_label,
+            'owner_status' => (string) $row->status,
         ];
     }
 

@@ -83,6 +83,80 @@ class ThesisLaneBoundaryTest extends TestCase
             ->count(), 'the scalp exit engine must never write a close intent for a thesis position');
     }
 
+    public function test_a_stale_thesis_row_does_not_disable_the_scalp_lane_on_its_own_position(): void
+    {
+        // Ownership is attributed to the row that OPENED the position, not to
+        // any row that ever carried the option id. Otherwise an expired thesis
+        // entry from a previous week would disable the scalp lane's own
+        // protective stop on a contract the scalp lane later bought itself.
+        $thesis = ThesisIntent::query()->create([
+            'underlying_symbol' => 'SPY',
+            'direction' => ThesisIntent::DIRECTION_BULLISH,
+            'structure' => ThesisIntent::STRUCTURE_LONG_CALL,
+            'dte_min' => 30,
+            'dte_max' => 70,
+            'max_debit' => 500.0,
+            'entry_limit_mode' => 'mid',
+            'entry_limit_offset_bps' => 0.0,
+            'thesis' => 'Stale entry that never filled.',
+            'price_stop' => 88.0,
+            'time_stop_date' => Carbon::parse('2026-10-01'),
+            'profit_target_bps' => 6000.0,
+            'status' => ThesisIntent::STATUS_ACTIVE,
+        ]);
+
+        // Never filled: the thesis lane does not own this position.
+        RobinhoodTradeJournal::query()->create([
+            'account_number' => (string) config('harness.agentic_account'),
+            'asset_class' => 'option', 'symbol' => 'SPY', 'underlying_symbol' => 'SPY',
+            'option_id' => 'opt-shared', 'option_type' => 'call',
+            'expiration_date' => '2026-08-21', 'strike_price' => 100.0,
+            'status' => ThesisLaneConfig::STATUS_EXPIRED_UNFILLED,
+            'intent' => 'long_call', 'side' => 'buy', 'position_effect' => 'open',
+            'order_type' => 'limit', 'quantity' => 1, 'limit_price' => 2.10,
+            'strategy_label' => ThesisLaneConfig::STRATEGY_LABEL,
+            'thesis_intent_id' => $thesis->id,
+        ]);
+
+        // The scalp lane then bought the same contract and holds the position.
+        RobinhoodTradeJournal::query()->create([
+            'account_number' => (string) config('harness.agentic_account'),
+            'asset_class' => 'option', 'symbol' => 'SPY', 'underlying_symbol' => 'SPY',
+            'option_id' => 'opt-shared', 'chain_id' => 'chain-spy', 'option_type' => 'call',
+            'expiration_date' => '2026-08-21', 'strike_price' => 100.0,
+            'status' => 'filled',
+            'intent' => 'long_call', 'side' => 'buy', 'position_effect' => 'open',
+            'order_type' => 'limit', 'time_in_force' => 'gfd', 'market_hours' => 'regular_hours',
+            'quantity' => 1, 'limit_price' => 0.30, 'dollar_amount' => 30.00,
+            'filled_quantity' => 1, 'average_fill_price' => 0.30,
+            'filled_at' => now()->subMinutes(45),
+            'strategy_label' => 'theta_option_single_leg',
+        ]);
+
+        $this->optionPositions = [[
+            'option_id' => 'opt-shared',
+            'chain_id' => 'chain-spy',
+            'underlying_symbol' => 'SPY',
+            'underlying_type' => 'equity',
+            'type' => 'call',
+            'expiration_date' => '2026-08-21',
+            'strike_price' => '100.0000',
+            'quantity' => '1',
+            'average_price' => '30.0000',
+            'tradability' => 'tradable',
+            'state' => 'active',
+            'opened_at' => now()->subMinutes(45)->toIso8601String(),
+        ]];
+        $this->fakeDataAndBroker();
+
+        $this->artisan('theta:option-intent-producer --symbols=SPY --limit=1')->assertExitCode(0);
+
+        $this->assertSame(1, RobinhoodTradeJournal::query()
+            ->where('side', 'sell')
+            ->where('position_effect', 'close')
+            ->count(), 'the scalp lane must still manage the position it opened');
+    }
+
     public function test_the_scalp_autopilot_cannot_claim_a_thesis_play_even_when_pointed_at_it(): void
     {
         $row = $this->thesisPosition(status: ThesisLaneConfig::STATUS_ASSEMBLED);

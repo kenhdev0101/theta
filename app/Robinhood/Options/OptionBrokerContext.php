@@ -46,17 +46,18 @@ final class OptionBrokerContext
         }
 
         $today = now()->toDateString();
-        // `thesis_repegging` and `thesis_entry_blocked` count because a row in
-        // either state may still have a live buy order at the broker. Dropping
-        // them would refund an unconfirmed debit back into the day's budget
-        // and let the harness over-commit against exposure it cannot yet prove
-        // is gone.
+        // The thesis lane's in-flight statuses count too: `thesis_repegging`
+        // and `thesis_entry_blocked` may still have a live buy order at the
+        // broker, and `thesis_entry_filled` is a filled entry awaiting the
+        // reconciler's terminal write. Dropping any of them would refund a
+        // real debit back into the day's budget and let the harness
+        // over-commit against exposure it cannot yet prove is gone.
         $journalToday = RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
             ->where('side', 'buy')
             ->whereIn('status', [
                 'submitted', 'open', 'partially_filled', 'filled',
-                'thesis_repegging', 'thesis_entry_blocked',
+                'thesis_repegging', 'thesis_entry_blocked', 'thesis_entry_filled',
             ])
             ->whereDate('created_at', $today)
             ->get(['underlying_symbol', 'dollar_amount']);

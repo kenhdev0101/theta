@@ -36,6 +36,19 @@ Schedule::command('theta:thesis-assemble')
     ->dailyAt('8:45')
     ->withoutOverlapping();
 
+// Post-open fallback. Options do not trade pre-open, so whether Robinhood
+// serves a usable option quote at 08:45 ET is unmeasured; if it returns no
+// bid/ask, the 08:45 tick skips with a named reason and the day has no slate
+// at all. Assembly is idempotent (hasLivePlay + hasLivePlayForUnderlying), so
+// a second tick just after the bell is a no-op on a normal day and the safety
+// net on an abnormal one. The 08:45 run stays authoritative — it is the one
+// that leaves the operator a pre-open window to act on what it derived.
+Schedule::command('theta:thesis-assemble')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->dailyAt('9:31')
+    ->withoutOverlapping();
+
 // Open executor: works the entry from the bell through the window close
 // (harness.thesis.entry.window_close_et, default 10:15 ET), then sweeps.
 //
