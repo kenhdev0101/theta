@@ -14,6 +14,9 @@ use App\Console\Commands\OptionReconcileCommand;
 use App\Console\Commands\OptionReviewProbeCommand;
 use App\Console\Commands\OptionsCapabilityReadbackCommand;
 use App\Console\Commands\ReconcileCommand;
+use App\Console\Commands\ThesisAddCommand;
+use App\Console\Commands\ThesisListCommand;
+use App\Console\Commands\ThesisSetCommand;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
 use Tests\TestCase;
@@ -36,6 +39,9 @@ class ConfigPropagationTest extends TestCase
         OptionIntentProducerCommand::class,
         OptionLivePlaceCommand::class,
         OptionAutopilotCommand::class,
+        ThesisAddCommand::class,
+        ThesisListCommand::class,
+        ThesisSetCommand::class,
     ];
 
     public function test_every_command_propagates_the_full_harness_block(): void
@@ -65,8 +71,16 @@ class ConfigPropagationTest extends TestCase
                 'greeks',
                 'alpaca',
                 'telemetry',
+                'thesis',
             ] as $key) {
                 $this->assertArrayHasKey($key, $cfg, "$class cfg assembly missing '$key'");
+            }
+
+            foreach ([
+                'enabled', 'max_open_positions', 'per_play_max_debit', 'per_day_max_debit',
+                'dte_floor', 'dte_ceiling', 'approval',
+            ] as $key) {
+                $this->assertArrayHasKey($key, $cfg['thesis'] ?? [], "$class thesis block missing '$key'");
             }
 
             foreach (['per_day_max_debit', 'per_play_max_debit', 'per_symbol_max_debit', 'max_open_positions'] as $key) {

@@ -90,7 +90,14 @@ return [
         'metadata_cache_seconds' => (int) env('HARNESS_OPTIONS_METADATA_CACHE_SECONDS', 900),
         'contract_multiplier' => 100.0,
         'producer' => [
-            'enabled' => (bool) env('HARNESS_OPTIONS_PRODUCER_ENABLED', true),
+            // PARKED 2026-08-18: intraday option scalping is retired as a
+            // strategy (June live run: −35% in four sessions — every round
+            // trip pays the full 1-DTE spread and locks its proceeds behind
+            // T+1 settlement, so churn starves the cash account's own buying
+            // power). The producer remains as an execution testbed only; the
+            // safe state is the default and arming requires this explicit env.
+            // The thesis lane (harness.thesis) is the strategy going forward.
+            'enabled' => (bool) env('HARNESS_OPTIONS_PRODUCER_ENABLED', false),
             'universe_source' => env('HARNESS_OPTIONS_PRODUCER_UNIVERSE_SOURCE', 'dynamic'), // dynamic|static
             'symbols' => array_values(array_filter(array_map(
                 'trim',
@@ -143,6 +150,31 @@ return [
             'place_option_order',
             'get_option_orders',
             'get_option_positions',
+        ],
+    ],
+
+    // Thesis-position lane — the firm's bread-and-butter options shape:
+    // 1-3 thesis-driven single-leg positions, 30-70 DTE typical, held days
+    // against precommitted kill triggers (docs/thesis-position-lane.md).
+    // Approval-first BY CONSTRUCTION: this lane never reads harness.mode —
+    // entries require an operator-armed slate, and silence means no trade.
+    'thesis' => [
+        'enabled' => (bool) env('HARNESS_THESIS_ENABLED', false),
+        'max_open_positions' => (int) env('HARNESS_THESIS_MAX_OPEN_POSITIONS', 3),
+        'per_play_max_debit' => (float) env('HARNESS_THESIS_PER_PLAY_MAX_DEBIT', 500.00),
+        'per_day_max_debit' => (float) env('HARNESS_THESIS_PER_DAY_MAX_DEBIT', 1000.00),
+        // Lane-level DTE guard rails; each intent carries its own band inside
+        // these. The floor keeps the lane out of short-dated spread noise
+        // (the scalp lane's loss engine), the ceiling out of LEAPS territory.
+        'dte_floor' => (int) env('HARNESS_THESIS_DTE_FLOOR', 14),
+        'dte_ceiling' => (int) env('HARNESS_THESIS_DTE_CEILING', 120),
+        'approval' => [
+            // Pre-open assembly leads the entry window by this many minutes
+            // (auth preflight -> chain resolve -> EV math -> slate push).
+            'assembly_lead_minutes' => (int) env('HARNESS_THESIS_ASSEMBLY_LEAD_MINUTES', 45),
+            // Operator approvals expire at this Eastern wall-clock time; an
+            // unarmed slate never trades.
+            'approval_expires_et' => env('HARNESS_THESIS_APPROVAL_EXPIRES_ET', '10:15'),
         ],
     ],
 
