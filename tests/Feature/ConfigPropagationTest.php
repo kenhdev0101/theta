@@ -14,11 +14,17 @@ use App\Console\Commands\OptionReconcileCommand;
 use App\Console\Commands\OptionReviewProbeCommand;
 use App\Console\Commands\OptionsCapabilityReadbackCommand;
 use App\Console\Commands\ReconcileCommand;
+use App\Console\Commands\ResidualEvaluateCommand;
+use App\Console\Commands\ResidualQuotesCommand;
+use App\Console\Commands\ResidualReplayCommand;
+use App\Console\Commands\ResidualTickCommand;
+use App\Console\Commands\ResidualWorkCommand;
 use App\Console\Commands\ThesisAddCommand;
 use App\Console\Commands\ThesisAssembleCommand;
 use App\Console\Commands\ThesisExecuteCommand;
 use App\Console\Commands\ThesisListCommand;
 use App\Console\Commands\ThesisSetCommand;
+use App\Console\Commands\ThesisValidateCommand;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
 use Tests\TestCase;
@@ -31,6 +37,11 @@ use Tests\TestCase;
 class ConfigPropagationTest extends TestCase
 {
     private const COMMANDS = [
+        ResidualTickCommand::class,
+        ResidualWorkCommand::class,
+        ResidualEvaluateCommand::class,
+        ResidualReplayCommand::class,
+        ResidualQuotesCommand::class,
         AlpacaSmokeTestCommand::class,
         BrokerReadbackCommand::class,
         LiveEquityProbeCommand::class,
@@ -46,6 +57,7 @@ class ConfigPropagationTest extends TestCase
         ThesisSetCommand::class,
         ThesisAssembleCommand::class,
         ThesisExecuteCommand::class,
+        ThesisValidateCommand::class,
     ];
 
     public function test_every_command_propagates_the_full_harness_block(): void
@@ -55,6 +67,8 @@ class ConfigPropagationTest extends TestCase
         config()->set('harness.allocation.per_play_max_debit', 7.5);
         config()->set('harness.allocation.per_day_max_debit', 33.0);
         config()->set('harness.alpaca.feed', 'sip');
+        config()->set('harness.residual.live_enabled', false);
+        config()->set('harness.residual.event_max_age_seconds', 123);
 
         foreach (self::COMMANDS as $class) {
             $cfg = (new $class)->assembleConfig();
@@ -76,9 +90,15 @@ class ConfigPropagationTest extends TestCase
                 'alpaca',
                 'telemetry',
                 'thesis',
+                'residual',
             ] as $key) {
                 $this->assertArrayHasKey($key, $cfg, "$class cfg assembly missing '$key'");
             }
+
+            $this->assertSame('residual-divergence-v1', $cfg['residual']['policy_version']);
+            $this->assertSame('XLP', $cfg['residual']['universe']['KO']);
+            $this->assertFalse($cfg['residual']['live_enabled']);
+            $this->assertSame(123, $cfg['residual']['event_max_age_seconds']);
 
             foreach ([
                 'enabled', 'max_open_positions', 'per_play_max_debit', 'per_day_max_debit',
