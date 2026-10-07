@@ -8,45 +8,28 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('theta:option-intent-producer')
-    ->weekdays()
-    ->everyMinute()
-    ->withoutOverlapping();
-
-Schedule::command('theta:option-autopilot')
-    ->weekdays()
-    ->everyMinute()
-    ->withoutOverlapping();
-
-Schedule::command('theta:option-reconcile')
-    ->weekdays()
-    ->everyMinute()
-    ->withoutOverlapping();
-
-// Warm the cockpit's broker-truth snapshot cache (read-only). Runs weekdays
-// to mirror the live loop; off-hours/weekends the cockpit lazily refreshes on
-// first view under a lock, so a single read serves all dashboard tabs.
-Schedule::command('theta:cockpit-snapshot')
-    ->weekdays()
-    ->everyMinute()
-    ->withoutOverlapping();
-
-// Behaviour monitor: every 30 min from market open through midday (Eastern),
-// pushing a digest each cycle (--heartbeat). Eastern timezone so the window
-// tracks the session across DST.
-Schedule::command('theta:cockpit-monitor --heartbeat')
-    ->weekdays()
-    ->timezone('America/New_York')
-    ->everyThirtyMinutes()
-    ->between('9:30', '12:00')
-    ->withoutOverlapping();
-
-// Grant-expiry safety net: a daily pre-market check that pushes only when
-// something needs attention (e.g. the OAuth grant is within its warn window).
-Schedule::command('theta:cockpit-monitor')
-    ->timezone('America/New_York')
-    ->dailyAt('8:00')
-    ->withoutOverlapping();
+// ─────────────────────────────────────────────────────────────────────────
+// CONVEX PAPER-CUT POSTURE (2026-10-07, ops/claude).
+// This box runs the read-only convex thesis family ONLY. Every cron that is
+// not theta:convex-ingest is disabled so the box places no broker orders and
+// the paper-cut readbacks stay clean. The live option trading family
+// (intent-producer / autopilot / reconcile) is OFF here; the cockpit snapshot/
+// monitor jobs are OFF too (not thesis-family). Re-enable by reverting this
+// block. Defense-in-depth: harness.kill_switch is also forced on (no placement)
+// in config/harness.php, so even a replayed queued job cannot place.
+// ─────────────────────────────────────────────────────────────────────────
+// Schedule::command('theta:option-intent-producer')  // DISABLED — live order producer
+//     ->weekdays()->everyMinute()->withoutOverlapping();
+// Schedule::command('theta:option-autopilot')        // DISABLED — live order placement
+//     ->weekdays()->everyMinute()->withoutOverlapping();
+// Schedule::command('theta:option-reconcile')        // DISABLED — trading-lane reconcile
+//     ->weekdays()->everyMinute()->withoutOverlapping();
+// Schedule::command('theta:cockpit-snapshot')        // DISABLED — not thesis-family (read-only)
+//     ->weekdays()->everyMinute()->withoutOverlapping();
+// Schedule::command('theta:cockpit-monitor --heartbeat')  // DISABLED — not thesis-family
+//     ->weekdays()->timezone('America/New_York')->everyThirtyMinutes()->between('9:30', '12:00')->withoutOverlapping();
+// Schedule::command('theta:cockpit-monitor')         // DISABLED — not thesis-family (grant-expiry net)
+//     ->timezone('America/New_York')->dailyAt('8:00')->withoutOverlapping();
 
 // Fringe-convexity data-plane ingestion (READ-ONLY). Registration is
 // unconditional; the command self-disarms when harness.convex.enabled is false

@@ -17,7 +17,10 @@ return [
     'mode' => env('HARNESS_MODE', 'auto'),
 
     // Global arm flag. true = no placement, alert.
-    'kill_switch' => (bool) env('HARNESS_KILL_SWITCH', false),
+    // Forced true for the convex read-only paper-cut box (2026-10-07, ops/claude):
+    // defense-in-depth so no order can be placed even if a queued job is replayed.
+    // Revert to env('HARNESS_KILL_SWITCH', false) to restore order placement.
+    'kill_switch' => (bool) env('HARNESS_KILL_SWITCH', true),
 
     // RH agentic OAuth credential (env fallback; encrypted-at-rest store is
     // the primary path — see App\Robinhood\Mcp\OAuthTokenStore).
