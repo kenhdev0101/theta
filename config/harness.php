@@ -76,7 +76,10 @@ return [
     // `enabled` arms the SCHEDULER only — a manual `theta:convex-ingest --once`
     // always runs a sweep.
     'convex' => [
-        'enabled' => (bool) env('HARNESS_CONVEX_INGEST_ENABLED', false),
+        // Scheduler arm baked into config (not the box .env) so the read-only
+        // sweep runs 9:30-16:00 ET without an env edit. HARNESS_CONVEX_INGEST_ENABLED
+        // stays an override kill-switch: set it false in the box .env to disarm.
+        'enabled' => (bool) env('HARNESS_CONVEX_INGEST_ENABLED', true),
         'tickers' => array_values(array_filter(array_map(
             'trim',
             explode(',', env('HARNESS_CONVEX_TICKERS', 'SPY,QQQ,IWM')),
