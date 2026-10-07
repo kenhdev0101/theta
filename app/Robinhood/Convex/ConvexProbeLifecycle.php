@@ -98,6 +98,16 @@ final class ConvexProbeLifecycle
                 if ($run->status !== 'staged') {
                     throw new RuntimeException('probe is not staged: '.$run->status);
                 }
+                // A resting or uncertain buy consumes potential cash and
+                // underlying exposure even before a broker position appears.
+                // Wait for broker reconciliation before admitting another leg.
+                $unresolvedEntry = ConvexProbeRun::query()
+                    ->where('account_number', $run->account_number)->where('id', '!=', $run->id)
+                    ->whereIn('status', ['entry_pending', 'ambiguous'])
+                    ->whereNotNull('entry_intent_key')->exists();
+                if ($unresolvedEntry) {
+                    return $this->mark($run, 'staged', 'unresolved_probe_entry_blocks_new_entry');
+                }
                 if ($run->thesis_expired_at !== null) {
                     return $this->mark($run, 'closed', 'thesis_expired_before_entry');
                 }
@@ -110,6 +120,17 @@ final class ConvexProbeLifecycle
                     ? ConvexMatrixAdmission::verify((array) $run->spec['matrix_source'], $leg, (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')))
                     : null;
                 $context = OptionBrokerContext::assemble($this->client, $this->cfg);
+                foreach ((array) ($context['open_option_orders'] ?? []) as $order) {
+                    if (! is_array($order) || ! in_array(strtolower((string) ($order['state'] ?? $order['status'] ?? '')), self::OPEN_STATES, true)) {
+                        continue;
+                    }
+                    foreach ((array) ($order['legs'] ?? []) as $orderLeg) {
+                        if (is_array($orderLeg) && ($orderLeg['side'] ?? null) === 'buy'
+                            && ($orderLeg['position_effect'] ?? null) === 'open') {
+                            return $this->mark($run, 'staged', 'unresolved_broker_option_entry_blocks_new_entry');
+                        }
+                    }
+                }
                 $settled = $context['settled_cash'] ?? null;
                 $buyingPower = $context['buying_power'] ?? null;
                 if (! is_numeric($settled) || ! is_numeric($buyingPower) || (float) $settled <= 0 || (float) $buyingPower <= 0) {
@@ -168,13 +189,21 @@ final class ConvexProbeLifecycle
                 ])->save();
 
                 try {
-                    $result = $this->executor()->execute($intent, array_merge($context, ['contract' => $contract, 'quote' => $quote]));
+                    $result = $this->executor()->execute($intent, array_merge($context, [
+                        'contract' => $contract, 'quote' => $quote,
+                        'convex_matrix_source' => $run->spec['matrix_source'] ?? null,
+                    ]));
                 } catch (\Throwable $e) {
                     $this->recoverRef($run, 'entry');
 
                     return $this->mark($run, 'ambiguous', 'entry_placement_unknown_reconcile_before_retry');
                 }
                 if ($result['classification'] !== 'LIVE_POSTED_NOT_FILLED') {
+                    // A deterministic rail/admission abort made no broker
+                    // submission. Keep the durable ref for audit, but do not
+                    // count this staged attempt as an entered contract.
+                    $run->forceFill(['entry_submitted_at' => null])->save();
+
                     return $this->mark($run, 'staged', implode('; ', $result['verdict']->blockReasons()));
                 }
                 $run->forceFill([

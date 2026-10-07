@@ -28,6 +28,17 @@ final class ConvexMatrixSnapshot
         return $latest;
     }
 
+    public function timestampForHash(string $hash, int $maxAgeSeconds = 900): ?Carbon
+    {
+        foreach ($this->recent($maxAgeSeconds) as $item) {
+            if ($item['hash'] === $hash) {
+                return $item['snapshot'];
+            }
+        }
+
+        return null;
+    }
+
     /** @return list<array{row:array<string,string>,hash:string,snapshot:Carbon}> */
     public function recent(int $maxAgeSeconds = 900): array
     {

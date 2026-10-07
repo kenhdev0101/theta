@@ -33,7 +33,12 @@ Artisan::command('inspire', function () {
 // Machine-owned convex stewardship runs continuously. New entries require
 // convex.auto_entry_enabled; the existing broker kill switch and rails remain.
 Schedule::command('theta:convex-auto')
-    ->everyTenSeconds(); // ConvexLoopLock serializes workers and releases on crash.
+    ->everyTenSeconds()
+    ->runInBackground(); // ConvexLoopLock serializes workers and releases on crash.
+Schedule::command('theta:convex-reconcile')
+    ->everyMinute()
+    ->withoutOverlapping(5)
+    ->runInBackground();
 // Fringe-convexity data-plane ingestion (READ-ONLY). Registration is
 // unconditional; the command self-disarms when harness.convex.enabled is false
 // (scheduler arm only — a manual `theta:convex-ingest --once` always sweeps).
@@ -43,4 +48,5 @@ Schedule::command('theta:convex-ingest')
     ->timezone('America/New_York')
     ->everyFiveMinutes()
     ->between('9:30', '16:00')
-    ->withoutOverlapping();
+    ->withoutOverlapping(10)
+    ->runInBackground();

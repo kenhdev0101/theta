@@ -12,6 +12,21 @@ use RuntimeException;
 /** Verifies the immutable entry evidence against the emitted feature matrix. */
 final class ConvexMatrixAdmission
 {
+    public static function currentBlocker(array $source, string $ticker, int $dte, string $matrixPath): ?string
+    {
+        $hash = (string) ($source['row_sha256'] ?? '');
+        if (! preg_match('/^[a-f0-9]{64}$/', $hash)) {
+            return 'matrix_admit_invalid_before_place';
+        }
+        $current = (new ConvexMatrixSnapshot($matrixPath))->latest()[ConvexMatrixSnapshot::key($ticker, $dte)] ?? null;
+        if ($current === null || $current['hash'] !== $hash || ($current['row']['verdict'] ?? '') !== 'ADMIT'
+            || ($current['row']['failed_signals'] ?? '') !== '' || ($current['row']['pending_signals'] ?? '') !== '') {
+            return 'matrix_admit_superseded_before_place';
+        }
+
+        return null;
+    }
+
     /** @param array<string,string> $row */
     public static function contractBlocker(array $row, array $contract, array $quote): ?string
     {

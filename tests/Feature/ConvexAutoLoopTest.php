@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Models\ConvexProbeRun;
 use App\Robinhood\Convex\ConvexAutoLoop;
 use App\Robinhood\Convex\ConvexLoopLock;
+use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Convex\ConvexMatrixSnapshot;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
@@ -33,6 +34,33 @@ final class ConvexAutoLoopTest extends TestCase
         $again();
     }
 
+    public function test_invalid_matrix_blocks_admission_but_still_ticks_owned_position(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07T18:03:00Z'));
+        $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
+        $this->assertIsString($path);
+        try {
+            file_put_contents($path, "broken,header\n");
+            ConvexProbeRun::query()->create([
+                'thesis_id' => 'convex-owned', 'leg_id' => 'probe', 'account_number' => '872449178',
+                'status' => 'held', 'underlying_symbol' => 'XLF', 'option_type' => 'call',
+                'spec' => $this->boundSpec(), 'spec_hash' => str_repeat('a', 64), 'option_id' => 'option-xlf',
+            ]);
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $client->expects($this->once())->method('getOptionOrders')
+                ->willThrowException(new RuntimeException('broker unavailable'));
+            $cfg = ['agentic_account' => '872449178', 'kill_switch' => false,
+                'convex' => ['matrix_path' => $path, 'auto_entry_enabled' => true, 'tickers' => ['XLF']]];
+
+            $events = (new ConvexAutoLoop($client, $cfg, new JsonlRecorder(sys_get_temp_dir())))->run();
+
+            $this->assertSame(['matrix_blocked', 'stewardship_blocked'], array_column($events, 'event'));
+            $this->assertSame(1, ConvexProbeRun::query()->count());
+        } finally {
+            unlink($path);
+        }
+    }
+
     public function test_matrix_transition_maps_only_fresh_structural_failures_to_expiry(): void
     {
         $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
@@ -52,6 +80,10 @@ final class ConvexAutoLoopTest extends TestCase
             $this->assertSame([], ConvexMatrixSnapshot::structuralFailures([
                 'verdict' => 'REJECT', 'failed_signals' => 'conventional_smirk', 'pending_signals' => 'fringe_not_rich',
             ]));
+            $this->assertSame('matrix_admit_superseded_before_place', ConvexMatrixAdmission::currentBlocker(
+                ['row_sha256' => $this->rowHash(['XLF', '72', '2026-10-07T18:00:00Z', 'ADMIT', '', '', '0.20'])],
+                'XLF', 72, $path,
+            ));
         } finally {
             unlink($path);
         }
@@ -135,6 +167,44 @@ final class ConvexAutoLoopTest extends TestCase
         }
     }
 
+    public function test_unplaced_staged_attempt_does_not_consume_symbol_tenor_session(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
+        $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
+        $this->assertIsString($path);
+        try {
+            $this->writeMatrix($path, [
+                ['XLF', '72', '2026-10-07T18:01:00Z', 'ADMIT', '', '', '0.20'],
+            ]);
+            ConvexProbeRun::query()->create([
+                'thesis_id' => 'convex-auto-old', 'leg_id' => 'near-delta-call', 'account_number' => '872449178',
+                'status' => 'staged', 'underlying_symbol' => 'XLF', 'option_type' => 'call',
+                'spec' => $this->boundSpec(), 'spec_hash' => str_repeat('a', 64),
+                'entry_submitted_at' => Carbon::parse('2026-10-07T17:59:00Z'),
+            ]);
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $client->method('getPortfolio')->willReturn(['data' => [
+                'cash' => '100.00', 'pending_deposits' => '100.00',
+                'buying_power' => ['buying_power' => '100.00'],
+            ]]);
+            $client->method('getEquityOrders')->willReturn(['data' => ['orders' => []]]);
+            $client->method('getOptionOrders')->willReturn(['data' => ['orders' => []]]);
+            $client->method('getOptionPositions')->willReturn(['data' => ['positions' => []]]);
+            $client->method('getAccountCapability')->willReturn([]);
+            $client->method('listTools')->willReturn([]);
+            $client->expects($this->never())->method('placeOptionOrder');
+            $cfg = ['agentic_account' => '872449178', 'kill_switch' => false,
+                'convex' => ['matrix_path' => $path, 'auto_entry_enabled' => true, 'tickers' => ['XLF'], 'bucket' => 'index']];
+
+            $events = (new ConvexAutoLoop($client, $cfg, new JsonlRecorder(sys_get_temp_dir())))->run();
+
+            $this->assertContains('entry_checked', array_column($events, 'event'));
+            $this->assertSame(2, ConvexProbeRun::query()->count());
+        } finally {
+            unlink($path);
+        }
+    }
+
     public function test_two_contracts_receive_independent_matrix_expiry_events(): void
     {
         $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
@@ -196,6 +266,38 @@ final class ConvexAutoLoopTest extends TestCase
 
             $this->assertNull($run->fresh()->thesis_expired_at);
             $this->assertSame(['stewardship_blocked'], array_column($events, 'event'));
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function test_reject_sampled_during_broker_review_expires_after_entry(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
+        $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
+        $this->assertIsString($path);
+        $admit = ['XLF', '72', '2026-10-07T18:00:00Z', 'ADMIT', '', '', '0.20'];
+        try {
+            $this->writeMatrix($path, [
+                $admit,
+                ['XLF', '72', '2026-10-07T18:01:00Z', 'REJECT', 'conventional_smirk', '', '0.20'],
+            ]);
+            $spec = $this->boundSpec();
+            $spec['matrix_source']['row_sha256'] = $this->rowHash($admit);
+            $run = ConvexProbeRun::query()->create([
+                'thesis_id' => 'convex-review-race', 'leg_id' => 'probe', 'account_number' => '872449178',
+                'status' => 'held', 'underlying_symbol' => 'XLF', 'option_type' => 'call',
+                'spec' => $spec, 'spec_hash' => str_repeat('a', 64), 'option_id' => 'option-xlf',
+                'entry_submitted_at' => Carbon::parse('2026-10-07T18:01:30Z'),
+            ]);
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $client->method('getOptionOrders')->willThrowException(new RuntimeException('broker unavailable'));
+            $cfg = ['agentic_account' => '872449178', 'kill_switch' => false,
+                'convex' => ['matrix_path' => $path, 'auto_entry_enabled' => false]];
+
+            (new ConvexAutoLoop($client, $cfg, new JsonlRecorder(sys_get_temp_dir())))->run();
+
+            $this->assertSame('THESIS_EXPIRED', $run->fresh()->stewardshipLabel());
         } finally {
             unlink($path);
         }

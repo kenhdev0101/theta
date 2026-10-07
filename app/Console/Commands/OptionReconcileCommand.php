@@ -17,12 +17,15 @@ class OptionReconcileCommand extends Command
 {
     use AssemblesHarnessConfig;
 
-    protected $signature = 'theta:option-reconcile';
+    protected $signature = 'theta:option-reconcile {--strategy= : Restrict journal and broker order reconciliation to this strategy label}';
 
     protected $description = 'Reconcile option journal rows against broker truth (placed_agent=agentic) and classify every row';
 
+    private string $strategy = '';
+
     public function handle(): int
     {
+        $this->strategy = trim((string) $this->option('strategy'));
         $cfg = $this->assembleConfig();
         $recorder = JsonlRecorder::fromConfig($cfg);
 
@@ -45,11 +48,23 @@ class OptionReconcileCommand extends Command
 
         $journalRows = RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
+            ->when($this->strategy !== '', fn ($query) => $query->where('strategy_label', $this->strategy))
             ->latest('id')->limit(1000)->get()
             ->map(fn (RobinhoodTradeJournal $row) => $row->only([
                 'client_ref_id', 'broker_order_id', 'status', 'symbol', 'underlying_symbol', 'option_id', 'side', 'position_effect',
             ]))
             ->all();
+
+        if ($this->strategy !== '') {
+            $refs = array_fill_keys(array_filter(array_column($journalRows, 'client_ref_id')), true);
+            $ids = array_fill_keys(array_filter(array_column($journalRows, 'broker_order_id')), true);
+            $brokerOrders = array_values(array_filter($brokerOrders, static function (array $order) use ($refs, $ids): bool {
+                $ref = (string) ($order['ref_id'] ?? $order['client_ref_id'] ?? '');
+                $id = (string) ($order['id'] ?? $order['order_id'] ?? '');
+
+                return isset($refs[$ref]) || isset($ids[$id]);
+            }));
+        }
 
         $result = (new BrokerTruthReconciler)->reconcileOptions($brokerOrders, $journalRows);
 
@@ -115,6 +130,9 @@ class OptionReconcileCommand extends Command
     private function findJournal(array $ledgerRow): ?RobinhoodTradeJournal
     {
         $query = RobinhoodTradeJournal::query()->where('asset_class', 'option');
+        if ($this->strategy !== '') {
+            $query->where('strategy_label', $this->strategy);
+        }
         if (! empty($ledgerRow['broker_order_id'])) {
             $query->where('broker_order_id', (string) $ledgerRow['broker_order_id']);
         } elseif (! empty($ledgerRow['client_ref_id'])) {
@@ -164,6 +182,7 @@ class OptionReconcileCommand extends Command
 
         $entry = RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
+            ->when($this->strategy !== '', fn ($query) => $query->where('strategy_label', $this->strategy))
             ->where('option_id', (string) $close->option_id)
             ->where('side', 'buy')
             ->where('position_effect', 'open')

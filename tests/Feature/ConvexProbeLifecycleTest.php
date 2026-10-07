@@ -56,6 +56,47 @@ final class ConvexProbeLifecycleTest extends TestCase
             ->assertExitCode(0);
     }
 
+    public function test_unresolved_first_entry_reserves_wallet_and_blocks_another_contract(): void
+    {
+        $client = $this->createMock(RobinhoodMcpClient::class);
+        $client->expects($this->never())->method('getPortfolio');
+        $client->expects($this->never())->method('placeOptionOrder');
+        $service = new ConvexProbeLifecycle($client, ['agentic_account' => '872449178'], new JsonlRecorder(sys_get_temp_dir()));
+        $first = $service->stage($this->spec());
+        $first->forceFill(['status' => 'entry_pending', 'entry_intent_key' => str_repeat('a', 64)])->save();
+        $secondSpec = $this->spec()->toArray();
+        $secondSpec['thesis_id'] = 'convex-test-second';
+        $second = $service->stage(ThesisSpec::fromArray($secondSpec));
+
+        $blocked = $service->enter($second);
+
+        $this->assertSame('staged', $blocked->status);
+        $this->assertSame('unresolved_probe_entry_blocks_new_entry', $blocked->block_reason);
+        $this->assertNull($blocked->entry_submitted_at);
+    }
+
+    public function test_unresolved_external_broker_buy_blocks_new_probe_entry(): void
+    {
+        $client = $this->createMock(RobinhoodMcpClient::class);
+        $client->method('getPortfolio')->willReturn(['data' => ['cash' => '100.00', 'buying_power' => ['buying_power' => '100.00']]]);
+        $client->method('getEquityOrders')->willReturn(['data' => ['orders' => []]]);
+        $client->method('getOptionOrders')->willReturn(['data' => ['orders' => [[
+            'id' => 'external-buy', 'state' => 'queued',
+            'legs' => [['option_id' => 'other-option', 'side' => 'buy', 'position_effect' => 'open']],
+        ]]]]);
+        $client->method('getOptionPositions')->willReturn(['data' => ['positions' => []]]);
+        $client->method('getAccountCapability')->willReturn([]);
+        $client->method('listTools')->willReturn([]);
+        $client->expects($this->never())->method('getOptionChains');
+        $client->expects($this->never())->method('placeOptionOrder');
+        $service = new ConvexProbeLifecycle($client, ['agentic_account' => '872449178'], new JsonlRecorder(sys_get_temp_dir()));
+
+        $run = $service->enter($service->stage($this->spec()));
+
+        $this->assertSame('staged', $run->status);
+        $this->assertSame('unresolved_broker_option_entry_blocks_new_entry', $run->block_reason);
+    }
+
     public function test_precommitted_time_profit_and_stop_exit_triggers(): void
     {
         $now = Carbon::parse('2026-10-07T18:00:00Z');

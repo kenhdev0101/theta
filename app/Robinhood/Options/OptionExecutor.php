@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Robinhood\Options;
 
 use App\Models\RobinhoodTradeJournal;
+use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Execution\OrderRefStore;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
@@ -86,6 +87,32 @@ final class OptionExecutor
                         'age_seconds' => is_finite($age) ? $age : null,
                         'gate_seconds' => $maxAge,
                     ]),
+                ]);
+
+                return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
+            }
+        }
+
+        // An ADMIT observed before contract selection can be superseded during
+        // broker context and review round trips. Recheck the immutable row at
+        // the placement boundary so a newer REJECT cannot open a stale thesis.
+        $matrixSource = $context['convex_matrix_source'] ?? null;
+        if ($intent->source === 'theta:convex-probe' && $intent->isOpening() && is_array($matrixSource)) {
+            try {
+                $dte = (int) Carbon::now('America/New_York')->startOfDay()->diffInDays(
+                    Carbon::parse($intent->expirationDate, 'America/New_York')->startOfDay(), false,
+                );
+                $block = ConvexMatrixAdmission::currentBlocker(
+                    $matrixSource, $intent->underlyingSymbol, $dte,
+                    (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')),
+                );
+            } catch (\Throwable) {
+                $block = 'matrix_unavailable_before_place';
+            }
+            if ($block !== null) {
+                $verdict = new OptionRailVerdict($intent, [
+                    ...$verdict->results,
+                    OptionGateResult::block('matrix_admission', 'BLOCK_ADMISSION', $block),
                 ]);
 
                 return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));

@@ -32,20 +32,39 @@ final class ConvexAutoLoop
         }
         try {
             $path = (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv'));
-            $latest = (new ConvexMatrixSnapshot($path))->latest();
             $events = [];
+            $matrixHealthy = true;
+            try {
+                $latest = (new ConvexMatrixSnapshot($path))->latest();
+            } catch (Throwable $e) {
+                // A broken data plane blocks admissions and structural inference,
+                // but it must never prevent broker stewardship of owned risk.
+                $matrixHealthy = false;
+                $latest = [];
+                $events[] = ['event' => 'matrix_blocked', 'reason' => $e->getMessage()];
+            }
             $active = ConvexProbeRun::query()
                 ->whereIn('status', ['entry_pending', 'held', 'exit_pending', 'ambiguous'])->orderBy('id')->get();
             foreach ($active as $run) {
                 try {
                     $newExpiry = false;
                     $matching = $latest[$this->runKey($run)] ?? null;
+                    $sourceHash = data_get($run->spec, 'matrix_source.row_sha256');
                     if ($matching !== null && $run->thesis_expired_at === null
                         && data_get($run->spec, 'legs.0.invalidation.thesis_stop') === 'external_event:thesis_expired'
-                        && is_string(data_get($run->spec, 'matrix_source.row_sha256'))
-                        && $matching['snapshot']->greaterThan($run->entry_submitted_at ?? $run->created_at)) {
+                        && is_string($sourceHash)) {
+                        $admittedAt = $run->entry_submitted_at ?? $run->created_at;
+                        try {
+                            // Compare against the bound ADMIT observation, not
+                            // order time: an ingest may finish after placement
+                            // with a snapshot taken during broker review.
+                            $admittedAt = (new ConvexMatrixSnapshot($path))->timestampForHash($sourceHash) ?? $admittedAt;
+                        } catch (Throwable) {
+                            // Broker stewardship must continue if the source
+                            // row is temporarily unreadable.
+                        }
                         $failures = ConvexMatrixSnapshot::structuralFailures($matching['row']);
-                        if ($failures !== []) {
+                        if ($failures !== [] && $matching['snapshot']->greaterThan($admittedAt)) {
                             $run = $this->lifecycle->expire(
                                 $run, 'matrix-'.substr($matching['hash'], 0, 32),
                                 'convex_matrix_transition', implode('|', $failures),
@@ -65,7 +84,7 @@ final class ConvexAutoLoop
                 }
             }
 
-            if (! (bool) data_get($this->cfg, 'convex.auto_entry_enabled', false)
+            if (! $matrixHealthy || ! (bool) data_get($this->cfg, 'convex.auto_entry_enabled', false)
                 || (bool) data_get($this->cfg, 'kill_switch', true) || ! $this->entryHours()) {
                 return $events;
             }
@@ -106,6 +125,9 @@ final class ConvexAutoLoop
                 try {
                     $updated = $this->lifecycle->enter($run);
                     $events[] = ['event' => 'entry_checked', 'thesis_id' => $updated->thesis_id, 'status' => $updated->status];
+                    if (in_array($updated->status, ['entry_pending', 'ambiguous'], true)) {
+                        break;
+                    }
                 } catch (Throwable $e) {
                     $events[] = ['event' => 'entry_blocked', 'thesis_id' => $thesisId, 'reason' => $e->getMessage()];
                 }
@@ -135,7 +157,7 @@ final class ConvexAutoLoop
             ->whereNotNull('entry_submitted_at')
             ->whereDate('created_at', Carbon::now('America/New_York')->toDateString())->get();
         foreach ($runs as $run) {
-            if ((int) data_get($run->spec, 'legs.0.dte.min', 0) === $dte) {
+            if ($run->status !== 'staged' && (int) data_get($run->spec, 'legs.0.dte.min', 0) === $dte) {
                 return true;
             }
         }

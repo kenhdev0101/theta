@@ -14,6 +14,7 @@ use App\Robinhood\Options\OptionRailPipeline;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Assert;
 use Tests\TestCase;
@@ -38,6 +39,8 @@ class OptionExecutorPlacementTest extends TestCase
 
     private int $reviewCalls = 0;
 
+    private ?\Closure $onReview = null;
+
     private function fakeMcp(): void
     {
         Http::fake(function (Request $request) {
@@ -57,6 +60,9 @@ class OptionExecutorPlacementTest extends TestCase
 
                 if ($tool === 'review_option_order') {
                     $this->reviewCalls++;
+                    if ($this->onReview !== null) {
+                        ($this->onReview)();
+                    }
 
                     return $this->toolResponse($payload['id'], $this->reviewResponse);
                 }
@@ -181,6 +187,43 @@ class OptionExecutorPlacementTest extends TestCase
         $this->assertSame('open', $journal->position_effect);
         $this->assertSame('chain-uuid-1', $journal->chain_id);
         $this->assertSame('long_call', $journal->intent);
+    }
+
+    public function test_new_matrix_reject_during_review_blocks_convex_placement(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
+        $path = tempnam(sys_get_temp_dir(), 'convex-place-');
+        $this->assertIsString($path);
+        try {
+            $columns = ['ticker', 'dte', 'snapshot_ts', 'verdict', 'failed_signals', 'pending_signals', 'far_delta'];
+            $admit = ['XLF', '72', '2026-10-07T18:00:00Z', 'ADMIT', '', '', '0.20'];
+            $handle = fopen($path, 'w');
+            fputcsv($handle, $columns);
+            fputcsv($handle, $admit);
+            fclose($handle);
+            $hash = hash('sha256', json_encode(array_combine($columns, $admit), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            config()->set('harness.convex.matrix_path', $path);
+            $this->onReview = static function () use ($path): void {
+                $handle = fopen($path, 'a');
+                fputcsv($handle, ['XLF', '72', '2026-10-07T18:01:00Z', 'REJECT', 'conventional_smirk', '', '0.20']);
+                fclose($handle);
+            };
+            $this->fakeMcp();
+            $context = $this->greenContext();
+            $context['quote']['updated_at'] = now()->toIso8601String();
+            $context['convex_matrix_source'] = ['row_sha256' => $hash];
+
+            $result = $this->executor()->execute($this->intent([
+                'source' => 'theta:convex-probe', 'underlyingSymbol' => 'XLF',
+                'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
+            ]), $context);
+
+            $this->assertSame('LIVE_RISK_ABORTED', $result['classification']);
+            $this->assertContains('matrix_admission:matrix_admit_superseded_before_place', $result['verdict']->blockReasons());
+            $this->assertSame([], $this->placedRefIds);
+        } finally {
+            unlink($path);
+        }
     }
 
     public function test_long_put_bto_maps_to_long_put_intent(): void

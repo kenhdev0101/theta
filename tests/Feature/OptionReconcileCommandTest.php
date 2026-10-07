@@ -51,6 +51,33 @@ class OptionReconcileCommandTest extends TestCase
         $this->assertNotNull($filled->filled_at);
     }
 
+    public function test_scheduled_convex_reconciliation_updates_only_its_journal_rows(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07 12:10:00', 'America/Los_Angeles'));
+        config()->set('harness.oauth_token', 'fixture-token');
+        config()->set('harness.broker_credits.enabled', false);
+        config()->set('harness.telemetry.dir', storage_path('framework/testing/harness'));
+        $convex = $this->journalRow('ref-convex', 'broker-convex', 'submitted', ['strategy_label' => 'convex_thesis_probe']);
+        $other = $this->journalRow('ref-other', 'broker-other', 'submitted', ['strategy_label' => 'another_strategy']);
+        $this->fakeMcp([
+            $this->brokerOrder('ref-convex', 'broker-convex', 'filled', processedQuantity: '1', averagePrice: '0.420000'),
+            $this->brokerOrder('ref-other', 'broker-other', 'filled', processedQuantity: '1', averagePrice: '0.420000'),
+        ]);
+
+        $this->artisan('theta:convex-reconcile')->assertExitCode(0);
+
+        $this->assertSame('filled', $convex->refresh()->status);
+        $this->assertSame('submitted', $other->refresh()->status);
+    }
+
+    public function test_convex_reconciliation_skips_broker_when_no_rows_need_truth(): void
+    {
+        config()->set('harness.oauth_token', '');
+        $this->journalRow('ref-other', 'broker-other', 'submitted', ['strategy_label' => 'another_strategy']);
+
+        $this->artisan('theta:convex-reconcile')->assertExitCode(0);
+    }
+
     public function test_reconcile_books_realized_pnl_on_filled_sell_to_close(): void
     {
         $this->travelTo(Carbon::parse('2026-06-12 11:20:00', 'America/Los_Angeles'));
