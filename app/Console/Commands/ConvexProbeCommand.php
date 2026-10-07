@@ -56,7 +56,7 @@ final class ConvexProbeCommand extends Command
             }
 
             $thesisId = (string) $this->option('thesis');
-            if ($thesisId === '' && in_array($action, ['enter', 'exit', 'expire', 'status'], true)) {
+            if ($thesisId === '' && in_array($action, ['enter', 'exit', 'expire'], true)) {
                 $this->error($action.' requires --thesis=<id>');
 
                 return self::INVALID;

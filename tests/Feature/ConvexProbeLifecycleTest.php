@@ -40,6 +40,22 @@ final class ConvexProbeLifecycleTest extends TestCase
         $service->stage(ThesisSpec::fromArray($altered));
     }
 
+    public function test_status_without_thesis_lists_multiple_runs(): void
+    {
+        $client = $this->createMock(RobinhoodMcpClient::class);
+        $service = new ConvexProbeLifecycle($client, ['agentic_account' => '872449178'], new JsonlRecorder(sys_get_temp_dir()));
+        $first = $this->spec()->toArray();
+        $second = $first;
+        $second['thesis_id'] = 'convex-test-second';
+        $service->stage(ThesisSpec::fromArray($first));
+        $service->stage(ThesisSpec::fromArray($second));
+
+        $this->artisan('theta:convex-probe status')
+            ->expectsOutputToContain('"thesis_id":"convex-test"')
+            ->expectsOutputToContain('"thesis_id":"convex-test-second"')
+            ->assertExitCode(0);
+    }
+
     public function test_precommitted_time_profit_and_stop_exit_triggers(): void
     {
         $now = Carbon::parse('2026-10-07T18:00:00Z');
