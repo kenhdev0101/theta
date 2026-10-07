@@ -124,7 +124,14 @@ final class OptionContractResolver
     private function quoteFor(string $optionId): ?array
     {
         $results = PortfolioReader::listFrom($this->client->getOptionQuotes([$optionId]), ['results']);
-        $quote = $results[0]['quote'] ?? null;
+        $quote = null;
+        foreach ($results as $result) {
+            $candidate = is_array($result) ? ($result['quote'] ?? null) : null;
+            if (is_array($candidate) && (string) ($candidate['instrument_id'] ?? '') === $optionId) {
+                $quote = $candidate;
+                break;
+            }
+        }
         if (! is_array($quote)) {
             return null;
         }

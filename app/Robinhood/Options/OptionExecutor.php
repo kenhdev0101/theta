@@ -8,6 +8,7 @@ use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Execution\OrderRefStore;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 
 /**
@@ -65,6 +66,30 @@ final class OptionExecutor
 
         if (! $verdict->allowed()) {
             return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
+        }
+
+        // Review is a broker round trip. The convex probe must still have a
+        // fresh quote at the actual placement boundary, not merely at the
+        // earlier resolver/rail snapshots.
+        if ($intent->source === 'theta:convex-probe') {
+            $updatedAt = data_get($context, 'quote.updated_at');
+            $maxAge = (int) data_get($this->cfg, 'options.min_quote_fresh_seconds', 10);
+            try {
+                $age = is_string($updatedAt) ? abs(Carbon::parse($updatedAt)->diffInSeconds(now())) : INF;
+            } catch (\Throwable) {
+                $age = INF;
+            }
+            if ($age > $maxAge) {
+                $verdict = new OptionRailVerdict($intent, [
+                    ...$verdict->results,
+                    OptionGateResult::block('quote_freshness', OptionRailPipeline::BLOCK_STALE_QUOTE, 'quote_stale_before_place', [
+                        'age_seconds' => is_finite($age) ? $age : null,
+                        'gate_seconds' => $maxAge,
+                    ]),
+                ]);
+
+                return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
+            }
         }
 
         $payload = $this->placePayload($intent);
@@ -241,9 +266,9 @@ final class OptionExecutor
             'quantity' => $intent->quantity,
             'limit_price' => $intent->limitPrice,
             'dollar_amount' => $intent->estimatedDebit(),
-            'strategy_label' => 'theta_option_single_leg',
+            'strategy_label' => $intent->strategyLabel,
             'structure_class' => 'single_leg_long',
-            'scanner_payload' => ['intent_source' => $intent->source],
+            'scanner_payload' => ['intent_source' => $intent->source, 'logical_order_id' => $intent->logicalOrderId, 'strategy_metadata' => $intent->metadata],
             'notes' => $notes,
         ], $extra);
 

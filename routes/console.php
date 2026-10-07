@@ -31,6 +31,8 @@ Artisan::command('inspire', function () {
 // Schedule::command('theta:cockpit-monitor')         // DISABLED — not thesis-family (grant-expiry net)
 //     ->timezone('America/New_York')->dailyAt('8:00')->withoutOverlapping();
 
+// The convex broker probe command is installed but deliberately unscheduled
+// on this box; the existing default-on kill switch remains unchanged.
 // Fringe-convexity data-plane ingestion (READ-ONLY). Registration is
 // unconditional; the command self-disarms when harness.convex.enabled is false
 // (scheduler arm only — a manual `theta:convex-ingest --once` always sweeps).

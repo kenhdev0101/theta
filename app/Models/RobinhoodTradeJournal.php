@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
@@ -29,6 +30,10 @@ use Illuminate\Support\Str;
  * @property string|null $limit_price
  * @property array|null $broker_payload
  * @property array|null $notes
+ * @property Carbon|null $created_at
+ * @property Carbon|null $filled_at
+ * @property Carbon|null $closed_at
+ * @property string|null $realized_pnl
  */
 class RobinhoodTradeJournal extends Model
 {

@@ -157,6 +157,15 @@ class RobinhoodMcpClient
         ], $filters));
     }
 
+    /** The caller must confirm cancellation through a subsequent broker order read. */
+    public function cancelOptionOrder(string $orderId): array
+    {
+        return $this->call('cancel_option_order', [
+            'account_number' => $this->agenticAccount,
+            'order_id' => $orderId,
+        ]);
+    }
+
     public function reviewOptionOrder(array $order): array
     {
         return $this->call('review_option_order', array_merge($order, [

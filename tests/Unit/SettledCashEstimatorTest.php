@@ -186,4 +186,27 @@ class SettledCashEstimatorTest extends TestCase
         $this->assertSame(210.83, $result['settled_cash']);
         $this->assertSame(35.0, $result['unsettled_sell_proceeds']);
     }
+
+    public function test_pending_deposits_are_excluded_from_estimated_settled_cash(): void
+    {
+        $portfolio = ['data' => [
+            'cash' => '100.00', 'pending_deposits' => '75.00',
+            'buying_power' => ['buying_power' => '100.00'],
+        ]];
+
+        $result = $this->estimator->fromBrokerTruth($portfolio, [], Carbon::parse('2026-10-07'));
+
+        $this->assertSame(25.0, $result['settled_cash']);
+        $this->assertSame(75.0, $result['assumptions']['pending_deposits_excluded']);
+    }
+
+    public function test_unparseable_pending_deposit_blocks_settled_cash_estimate(): void
+    {
+        $result = $this->estimator->fromBrokerTruth(['data' => [
+            'cash' => '100.00', 'pending_deposits' => 'unavailable',
+        ]], []);
+
+        $this->assertNull($result['settled_cash']);
+        $this->assertTrue($result['assumptions']['pending_deposits_unverified']);
+    }
 }
