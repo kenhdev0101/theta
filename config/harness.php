@@ -65,6 +65,51 @@ return [
         'timeout_seconds' => (int) env('HARNESS_GREEKS_TIMEOUT', 130),
     ],
 
+    // Fringe-convexity near-0.20Δ gamma-expression lane — READ-ONLY data plane.
+    // Ingests live broker option truth for the index underlyings in a 45-90 DTE
+    // band, routes it through the sealed convex feature extractor (greeks
+    // /run/convex_feature_row), validates each row against the sealed schema,
+    // and appends clean observations to the feature matrix with reserved
+    // outcome columns null for the later calibration join. Computes no
+    // money-moving number and places no order.
+    // Spec: docs/research/fringe-convexity/green-engine-architecture.md.
+    // `enabled` arms the SCHEDULER only — a manual `theta:convex-ingest --once`
+    // always runs a sweep.
+    'convex' => [
+        'enabled' => (bool) env('HARNESS_CONVEX_INGEST_ENABLED', false),
+        'tickers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', env('HARNESS_CONVEX_TICKERS', 'SPY,QQQ,IWM')),
+        ))),
+        'bucket' => env('HARNESS_CONVEX_BUCKET', 'index'),
+        'dte_floor' => (int) env('HARNESS_CONVEX_DTE_FLOOR', 45),
+        'dte_ceiling' => (int) env('HARNESS_CONVEX_DTE_CEILING', 90),
+        'tenors_per_ticker' => (int) env('HARNESS_CONVEX_TENORS_PER_TICKER', 2),
+        // Strike windows in fractions of spot. Calls reach out past the 0.20Δ
+        // wing to the deep fringe (gate needs ATM + 25Δ + a ≤0.10Δ fringe +
+        // ≥3 clean points for dispersion); puts cover the 25Δ down-wing for the
+        // risk-reversal read.
+        'call_moneyness_min' => (float) env('HARNESS_CONVEX_CALL_MONEYNESS_MIN', 0.98),
+        // ~1.15× spans past the 0.20Δ wing and the ≤0.10Δ fringe for 45-90 DTE
+        // index vols, while keeping instrument pagination bounded.
+        'call_moneyness_max' => (float) env('HARNESS_CONVEX_CALL_MONEYNESS_MAX', 1.15),
+        'put_moneyness_min' => (float) env('HARNESS_CONVEX_PUT_MONEYNESS_MIN', 0.80),
+        'put_moneyness_max' => (float) env('HARNESS_CONVEX_PUT_MONEYNESS_MAX', 1.02),
+        // 16/side = one ≤20-id quote chunk per side (half the quote burst of 24)
+        // while still spanning ATM → 25Δ → 0.20Δ → ≤0.10Δ fringe for the gate.
+        // The broker credit rail (harness.broker_credits.max_per_minute, default
+        // 45) is SHARED with the every-minute trading jobs, so keep this lean.
+        'max_strikes_per_side' => (int) env('HARNESS_CONVEX_MAX_STRIKES_PER_SIDE', 16),
+        // Broker instrument list is cursor-paginated (~100/page, ascending
+        // strike); the OTM call wing is on later pages, so we must walk them.
+        'max_instrument_pages' => (int) env('HARNESS_CONVEX_MAX_INSTRUMENT_PAGES', 10),
+        'quote_chunk_size' => (int) env('HARNESS_CONVEX_QUOTE_CHUNK_SIZE', 20),
+        'min_quote_fresh_seconds' => (int) env('HARNESS_CONVEX_QUOTE_FRESH_SECONDS', 60),
+        'loop_interval_seconds' => (int) env('HARNESS_CONVEX_LOOP_INTERVAL_SECONDS', 300),
+        'matrix_path' => env('HARNESS_CONVEX_MATRIX_PATH', storage_path('harness/convex_feature_matrix.csv')),
+        'policy_version' => 'convex-wrapper-napkin-v1',
+    ],
+
     // Options lane — single-leg Level 2 only (long calls/puts BTO, STC to
     // exit). Account 872449178 cleared option_level_2 on 2026-06-12.
     // Spreads/short options stay out until a later explicit pass.

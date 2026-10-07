@@ -29,6 +29,14 @@ SCRIPTS = {
     "expected_move": "expected_move.py",
     "regime_classify": "regime_classify.py",
     "pop_from_delta": "pop_from_delta.py",
+    "fringe_response": "fringe_response.py",
+    "fringe_surface": "fringe_surface.py",
+    "anchor_select": "anchor_select.py",
+    "convex_precompute": "convex_precompute.py",
+    "convex_terrain_filter": "convex_terrain_filter.py",
+    "convex_fill_sim": "convex_fill_sim.py",
+    "convex_feature_row": "convex_feature_row.py",
+    "convex_feature_schema": "convex_feature_schema.py",
 }
 
 RUN_TIMEOUT_SECONDS = 120
