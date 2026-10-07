@@ -79,6 +79,10 @@ return [
     // `enabled` arms the SCHEDULER only — a manual `theta:convex-ingest --once`
     // always runs a sweep.
     'convex' => [
+        // Machine decisions are made from fresh sealed matrix rows. Disarming
+        // entries never disarms supervision of an already owned position.
+        'auto_entry_enabled' => (bool) env('HARNESS_CONVEX_AUTO_ENTRY_ENABLED', false),
+        'auto_max_hold_minutes' => (int) env('HARNESS_CONVEX_AUTO_MAX_HOLD_MINUTES', 5),
         // Scheduler arm baked into config (not the box .env) so the read-only
         // sweep runs 9:30-16:00 ET without an env edit. HARNESS_CONVEX_INGEST_ENABLED
         // stays an override kill-switch: set it false in the box .env to disarm.

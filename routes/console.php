@@ -9,14 +9,13 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 // ─────────────────────────────────────────────────────────────────────────
-// CONVEX PAPER-CUT POSTURE (2026-10-07, ops/claude).
-// This box runs the read-only convex thesis family ONLY. Every cron that is
-// not theta:convex-ingest is disabled so the box places no broker orders and
-// the paper-cut readbacks stay clean. The live option trading family
+// CONVEX THESIS FAMILY POSTURE (2026-10-07).
+// This box runs only the convex thesis family. The matrix ingest stays read-only;
+// the separate convex-auto loop may place bounded option orders when its
+// explicit entry gate is enabled. The live general option trading family
 // (intent-producer / autopilot / reconcile) is OFF here; the cockpit snapshot/
-// monitor jobs are OFF too (not thesis-family). Re-enable by reverting this
-// block. Defense-in-depth: harness.kill_switch is also forced on (no placement)
-// in config/harness.php, so even a replayed queued job cannot place.
+// monitor jobs are OFF too (not thesis-family). The existing kill switch and
+// broker rails still govern every order; this scheduler does not change them.
 // ─────────────────────────────────────────────────────────────────────────
 // Schedule::command('theta:option-intent-producer')  // DISABLED — live order producer
 //     ->weekdays()->everyMinute()->withoutOverlapping();
@@ -31,8 +30,10 @@ Artisan::command('inspire', function () {
 // Schedule::command('theta:cockpit-monitor')         // DISABLED — not thesis-family (grant-expiry net)
 //     ->timezone('America/New_York')->dailyAt('8:00')->withoutOverlapping();
 
-// The convex broker probe command is installed but deliberately unscheduled
-// on this box; the existing default-on kill switch remains unchanged.
+// Machine-owned convex stewardship runs continuously. New entries require
+// convex.auto_entry_enabled; the existing broker kill switch and rails remain.
+Schedule::command('theta:convex-auto')
+    ->everyTenSeconds(); // ConvexLoopLock serializes workers and releases on crash.
 // Fringe-convexity data-plane ingestion (READ-ONLY). Registration is
 // unconditional; the command self-disarms when harness.convex.enabled is false
 // (scheduler arm only — a manual `theta:convex-ingest --once` always sweeps).
