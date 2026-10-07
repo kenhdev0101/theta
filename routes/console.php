@@ -47,3 +47,14 @@ Schedule::command('theta:cockpit-monitor')
     ->timezone('America/New_York')
     ->dailyAt('8:00')
     ->withoutOverlapping();
+
+// Fringe-convexity data-plane ingestion (READ-ONLY). Registration is
+// unconditional; the command self-disarms when harness.convex.enabled is false
+// (scheduler arm only — a manual `theta:convex-ingest --once` always sweeps).
+// RTH only; the feed is live option truth, which does not quote pre-open.
+Schedule::command('theta:convex-ingest')
+    ->weekdays()
+    ->timezone('America/New_York')
+    ->everyFiveMinutes()
+    ->between('9:30', '16:00')
+    ->withoutOverlapping();
