@@ -58,7 +58,11 @@ final class ConvexAutoLoop
                             // Compare against the bound ADMIT observation, not
                             // order time: an ingest may finish after placement
                             // with a snapshot taken during broker review.
-                            $admittedAt = (new ConvexMatrixSnapshot($path))->timestampForHash($sourceHash) ?? $admittedAt;
+                            // The source ADMIT can age out of the 15-minute
+                            // entry window while a still-fresh REJECT follows
+                            // it. Keep the immutable source readable through
+                            // the full stewardship horizon.
+                            $admittedAt = (new ConvexMatrixSnapshot($path))->timestampForHash($sourceHash, 86400) ?? $admittedAt;
                         } catch (Throwable) {
                             // Broker stewardship must continue if the source
                             // row is temporarily unreadable.

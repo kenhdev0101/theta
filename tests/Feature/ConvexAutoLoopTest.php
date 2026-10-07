@@ -273,14 +273,14 @@ final class ConvexAutoLoopTest extends TestCase
 
     public function test_reject_sampled_during_broker_review_expires_after_entry(): void
     {
-        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
+        $this->travelTo(Carbon::parse('2026-10-07T18:16:00Z'));
         $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
         $this->assertIsString($path);
         $admit = ['XLF', '72', '2026-10-07T18:00:00Z', 'ADMIT', '', '', '0.20'];
         try {
             $this->writeMatrix($path, [
                 $admit,
-                ['XLF', '72', '2026-10-07T18:01:00Z', 'REJECT', 'conventional_smirk', '', '0.20'],
+                ['XLF', '72', '2026-10-07T18:01:30Z', 'REJECT', 'conventional_smirk', '', '0.20'],
             ]);
             $spec = $this->boundSpec();
             $spec['matrix_source']['row_sha256'] = $this->rowHash($admit);
@@ -288,7 +288,7 @@ final class ConvexAutoLoopTest extends TestCase
                 'thesis_id' => 'convex-review-race', 'leg_id' => 'probe', 'account_number' => '872449178',
                 'status' => 'held', 'underlying_symbol' => 'XLF', 'option_type' => 'call',
                 'spec' => $spec, 'spec_hash' => str_repeat('a', 64), 'option_id' => 'option-xlf',
-                'entry_submitted_at' => Carbon::parse('2026-10-07T18:01:30Z'),
+                'entry_submitted_at' => Carbon::parse('2026-10-07T18:02:00Z'),
             ]);
             $client = $this->createMock(RobinhoodMcpClient::class);
             $client->method('getOptionOrders')->willThrowException(new RuntimeException('broker unavailable'));
