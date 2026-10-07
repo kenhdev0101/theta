@@ -23,6 +23,13 @@ Schedule::command('theta:option-reconcile')
     ->everyMinute()
     ->withoutOverlapping();
 
+// Entry is explicit. Once a convex thesis probe has an order, supervise its
+// broker-confirmed fill and precommitted exit across restarts.
+Schedule::command('theta:convex-probe tick')
+    ->weekdays()
+    ->everyMinute()
+    ->withoutOverlapping();
+
 // Thesis-position lane. Registration is unconditional: both commands
 // self-disarm when harness.thesis.enabled is false, matching the scalp lane's
 // pattern. Neither reads harness.mode — the lane is approval-first by

@@ -1,0 +1,33 @@
+{
+  "spec_version": "1",
+  "thesis_id": "convex-expiry-probe-a-20261007",
+  "owner": "theta",
+  "agent_id": "codex/convex-broker-probe-20261007",
+  "thesis": "Bounded first contract for explicit thesis expiry and broker-confirmed exit verification.",
+  "matrix_source": {
+    "row_sha256": "a04f4cea91791d896448dbd75084d4a5ba1b8beca94f323b6c8cb95da91c2bab"
+  },
+  "legs": [
+    {
+      "leg_id": "xlf-72d-58c-probe",
+      "role": "probe",
+      "asset_class": "option",
+      "symbol": "XLF",
+      "direction": "long",
+      "structure": "single_leg_long_call",
+      "dte": {"min": 72, "max": 72},
+      "moneyness": {"mode": "delta", "target": 0.18},
+      "sizing": {"mode": "balance_fraction", "fraction": 1.0},
+      "entry": {"type": "marketable_limit"},
+      "invalidation": {
+        "thesis_stop": "external_event:thesis_expired",
+        "time_stop": "2026-10-09"
+      },
+      "fast_exit": {
+        "max_hold_minutes": 5,
+        "profit_target_mult": 1.30,
+        "hard_stop_pct": 30
+      }
+    }
+  ]
+}

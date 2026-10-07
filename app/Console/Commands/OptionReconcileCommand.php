@@ -59,7 +59,17 @@ class OptionReconcileCommand extends Command
             collect($result['summary'])->map(fn ($n, $c) => [$c, (string) $n])->values()->all(),
         );
 
-        foreach ($result['ledger'] as $row) {
+        // A broker response may list the close before its opening fill. Apply
+        // opening truth first so a single pass can book the close's realized
+        // P&L without waiting for a second reconciliation run.
+        $ledger = $result['ledger'];
+        usort($ledger, static function (array $a, array $b): int {
+            $aClose = ($a['side'] ?? null) === 'sell' && ($a['position_effect'] ?? null) === 'close';
+            $bClose = ($b['side'] ?? null) === 'sell' && ($b['position_effect'] ?? null) === 'close';
+
+            return (int) $aClose <=> (int) $bClose;
+        });
+        foreach ($ledger as $row) {
             $this->applyBrokerTruthToJournal($row);
 
             if ($row['classification'] === BrokerTruthReconciler::LABEL_CONFLICT_NOT_BROKER_FILLED
@@ -158,13 +168,11 @@ class OptionReconcileCommand extends Command
             ->where('side', 'buy')
             ->where('position_effect', 'open')
             ->where('status', 'filled')
-            ->where(function ($query) use ($close): void {
-                $closeTime = $close->filled_at ?? $close->created_at;
-                if ($closeTime !== null) {
-                    $query->whereNull('filled_at')->orWhere('filled_at', '<=', $closeTime);
-                }
-            })
-            ->latest('filled_at')
+            // Reconciliation time is not broker fill time. On a first pass
+            // both rows may be stamped filled now, after the close journal
+            // was created. Use durable order-intent sequence for pairing.
+            ->where('created_at', '<=', $close->created_at)
+            ->latest('created_at')
             ->latest('id')
             ->first();
 

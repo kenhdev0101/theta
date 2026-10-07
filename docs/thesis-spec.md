@@ -142,6 +142,14 @@ needs.)
   agnostic, so it also closes the options S6 gap. Reconcile keeps terminal-fill
   and realized-P&L ownership.
 
+**2026-10-07 convex mechanical slice:** `docs/convex-probe-lifecycle.md` adds a
+single option-leg probe through the existing option rails and an owned
+entry/exit supervisor. It is a bounded broker-path test of the JSON primitive,
+not completion of general E2 persistence or the asset-class-agnostic E3 manager.
+The initial one-contract broker lifecycle closed on October 7. The follow-up
+explicit thesis-expiry path is documented there with its separate review and
+broker readback.
+
 Everything lands default-off behind a lane flag; arming is capital/operator
 authority (CLAUDE.md). The account read $14.07 on 2026-09-25 — enough to
 validate the equity spine live at fractional size, not to fund the option leg.

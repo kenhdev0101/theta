@@ -85,6 +85,33 @@ class OptionReconcileCommandTest extends TestCase
         $this->assertNotNull($close->closed_at);
     }
 
+    public function test_one_pass_books_realized_pnl_when_broker_lists_close_before_open(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07 11:59:00', 'America/Los_Angeles'));
+        config()->set('harness.oauth_token', 'fixture-token');
+        config()->set('harness.broker_credits.enabled', false);
+        config()->set('harness.telemetry.dir', storage_path('framework/testing/harness'));
+
+        $entry = $this->journalRow('ref-entry', 'broker-entry', 'submitted', [
+            'side' => 'buy', 'position_effect' => 'open', 'limit_price' => 0.22,
+        ]);
+        $this->travelTo(Carbon::parse('2026-10-07 12:02:00', 'America/Los_Angeles'));
+        $close = $this->journalRow('ref-close', 'broker-close', 'submitted', [
+            'side' => 'sell', 'position_effect' => 'close', 'limit_price' => 0.20,
+        ]);
+        $this->travelTo(Carbon::parse('2026-10-07 12:03:00', 'America/Los_Angeles'));
+        $this->fakeMcp([
+            $this->brokerOrder('ref-close', 'broker-close', 'filled', processedQuantity: '1', averagePrice: '0.200000', side: 'sell', positionEffect: 'close'),
+            $this->brokerOrder('ref-entry', 'broker-entry', 'filled', processedQuantity: '1', averagePrice: '0.220000'),
+        ]);
+
+        $this->artisan('theta:option-reconcile')->assertExitCode(0);
+
+        $this->assertSame('filled', $entry->refresh()->status);
+        $this->assertSame('filled', $close->refresh()->status);
+        $this->assertSame('-2.00', (string) $close->realized_pnl);
+    }
+
     private function journalRow(string $refId, string $brokerOrderId, string $status, array $overrides = []): RobinhoodTradeJournal
     {
         return RobinhoodTradeJournal::query()->create(array_merge([

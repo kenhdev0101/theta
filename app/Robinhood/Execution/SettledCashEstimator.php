@@ -13,8 +13,8 @@ use Illuminate\Support\Carbon;
  * The live get_portfolio surface exposes total `cash` but no
  * settled/unsettled split, so settled cash is derived from broker truth:
  *
- *   settled = cash − Σ(filled sell proceeds whose T+1 settlement date
- *                      is still in the future)
+ *   settled = cash − pending deposits − Σ(filled sell proceeds whose T+1
+ *                                        settlement date is still in the future)
  *
  * Equity and listed option settlement is T+1 (next business day after the
  * trade date).
@@ -45,7 +45,17 @@ final class SettledCashEstimator
             ];
         }
 
-        return $this->estimate(PortfolioReader::cash($portfolio), array_merge($brokerOrders, $optionOrders), $today);
+        $unwrapped = PortfolioReader::unwrap($portfolio);
+        $pending = $unwrapped['pending_deposits'] ?? 0;
+        if (! is_numeric($pending) || (float) $pending < 0) {
+            return [
+                'settled_cash' => null,
+                'unsettled_sell_proceeds' => 0.0,
+                'assumptions' => ['pending_deposits_unverified' => true],
+            ];
+        }
+
+        return $this->estimate(PortfolioReader::cash($portfolio), array_merge($brokerOrders, $optionOrders), $today, (float) $pending);
     }
 
     /**
@@ -53,7 +63,7 @@ final class SettledCashEstimator
      * @param  list<array>  $brokerOrders  rows from get_equity_orders/get_option_orders(placed_agent='agentic')
      * @return array{settled_cash: float|null, unsettled_sell_proceeds: float, assumptions: array}
      */
-    public function estimate(?float $cash, array $brokerOrders, ?Carbon $today = null): array
+    public function estimate(?float $cash, array $brokerOrders, ?Carbon $today = null, float $pendingDeposits = 0.0): array
     {
         $today = ($today ?? now())->copy()->startOfDay();
 
@@ -104,12 +114,13 @@ final class SettledCashEstimator
         }
 
         return [
-            'settled_cash' => round(max(0.0, $cash - $unsettled), 2),
+            'settled_cash' => round(max(0.0, $cash - $pendingDeposits - $unsettled), 2),
             'unsettled_sell_proceeds' => round($unsettled, 2),
             'assumptions' => [
                 'model' => 't_plus_1_business_days',
                 'holidays_modeled' => false,
                 'as_of' => $today->toDateString(),
+                'pending_deposits_excluded' => round($pendingDeposits, 2),
                 'unsettled_rows' => $unsettledRows,
             ],
         ];

@@ -41,6 +41,30 @@ final class ThesisSpecLeg
 
     public const STRUCTURE_LONG_PUT = 'single_leg_long_put';
 
+    /** The conventional near-the-money expression. */
+    public const ROLE_CORE = 'core';
+
+    /** A short-dated / far-OTM fringe leg that scouts a sibling core leg. */
+    public const ROLE_PROBE = 'probe';
+
+    /** Strike selection is by target option delta (the convexity-band primitive). */
+    public const MONEYNESS_DELTA = 'delta';
+
+    /** Strike selection is by percent out-of-the-money from spot. */
+    public const MONEYNESS_OTM_PCT = 'otm_pct';
+
+    /** Strike nearest spot (the default when moneyness is unspecified). */
+    public const MONEYNESS_ATM = 'atm';
+
+    /**
+     * |delta| at or below which a long option leg counts as fringe — the
+     * negative-mean-carry, high-convexity-per-premium region that requires the
+     * fast-exit + time-stop discipline. The convex sweet spot is ~0.15-0.30
+     * (dollar-gamma, not gamma-per-premium, which keeps rising into the dead
+     * tail); 0.35 is the outer weekly/event band.
+     */
+    public const FRINGE_DELTA_CEILING = 0.35;
+
     /** @param array<string,mixed> $raw */
     public function __construct(private readonly array $raw) {}
 
@@ -202,6 +226,143 @@ final class ThesisSpecLeg
         $value = $this->numeric(($this->raw['dte'] ?? [])['max'] ?? null);
 
         return $value === null ? null : (int) $value;
+    }
+
+    // --- fringe / probe (amplifier) fields ----------------------------------
+
+    public function role(): string
+    {
+        $role = strtolower(trim((string) ($this->raw['role'] ?? '')));
+
+        return $role !== '' ? $role : self::ROLE_CORE;
+    }
+
+    public function isProbe(): bool
+    {
+        return $this->role() === self::ROLE_PROBE;
+    }
+
+    /** @return array<string,mixed> */
+    public function moneyness(): array
+    {
+        return (array) ($this->raw['moneyness'] ?? []);
+    }
+
+    public function moneynessMode(): string
+    {
+        $mode = strtolower(trim((string) ($this->moneyness()['mode'] ?? '')));
+
+        return $mode !== '' ? $mode : self::MONEYNESS_ATM;
+    }
+
+    public function targetDelta(): ?float
+    {
+        return $this->numeric($this->moneyness()['target'] ?? $this->moneyness()['delta'] ?? null);
+    }
+
+    public function otmPct(): ?float
+    {
+        return $this->numeric($this->moneyness()['otm_pct'] ?? ($this->moneynessMode() === self::MONEYNESS_OTM_PCT ? $this->moneyness()['target'] ?? null : null));
+    }
+
+    /**
+     * A long option leg is "fringe" when it sits in the OTM convexity region
+     * (by delta or by percent OTM) or is explicitly a probe. Fringe legs carry
+     * negative mean carry, so the validator forces the fast-exit + time-stop
+     * discipline on them. Equity legs are never fringe.
+     */
+    public function isFringe(): bool
+    {
+        if (! $this->isOption()) {
+            return false;
+        }
+
+        if ($this->isProbe()) {
+            return true;
+        }
+
+        if ($this->moneynessMode() === self::MONEYNESS_DELTA) {
+            $delta = $this->targetDelta();
+
+            return $delta !== null && $delta > 0.0 && $delta <= self::FRINGE_DELTA_CEILING;
+        }
+
+        return $this->moneynessMode() === self::MONEYNESS_OTM_PCT && ($this->otmPct() ?? 0.0) > 0.0;
+    }
+
+    public function scouts(): ?string
+    {
+        $value = trim((string) ($this->raw['scouts'] ?? ''));
+
+        return $value !== '' ? $value : null;
+    }
+
+    /** @return array<string,mixed> */
+    public function fastExit(): array
+    {
+        return (array) ($this->raw['fast_exit'] ?? []);
+    }
+
+    public function hasFastExit(): bool
+    {
+        return $this->fastExit() !== [];
+    }
+
+    public function fastExitProfitTargetMult(): ?float
+    {
+        return $this->numeric($this->fastExit()['profit_target_mult'] ?? null);
+    }
+
+    public function fastExitScaleOutPct(): ?float
+    {
+        return $this->numeric($this->fastExit()['scale_out_pct'] ?? null);
+    }
+
+    public function fastExitTrailFromPeakPct(): ?float
+    {
+        return $this->numeric($this->fastExit()['trail_from_peak_pct'] ?? null);
+    }
+
+    public function fastExitMaxHoldDte(): ?int
+    {
+        $value = $this->numeric($this->fastExit()['max_hold_dte'] ?? null);
+
+        return $value === null ? null : (int) $value;
+    }
+
+    public function fastExitMaxHoldMinutes(): ?float
+    {
+        return $this->numeric($this->fastExit()['max_hold_minutes'] ?? null);
+    }
+
+    public function fastExitDeltaTake(): ?float
+    {
+        return $this->numeric($this->fastExit()['delta_take'] ?? null);
+    }
+
+    public function fastExitDeltaClose(): ?float
+    {
+        return $this->numeric($this->fastExit()['delta_close'] ?? null);
+    }
+
+    public function fastExitHardStopPct(): ?float
+    {
+        return $this->numeric($this->fastExit()['hard_stop_pct'] ?? null);
+    }
+
+    public function hasFastExitMaxHold(): bool
+    {
+        return $this->fastExitMaxHoldDte() !== null || $this->fastExitMaxHoldMinutes() !== null;
+    }
+
+    /** The authoring-time dollar figure for this leg, when unambiguous (notional only). */
+    public function notionalUsd(): ?float
+    {
+        if ($this->sizingMode() !== self::SIZING_NOTIONAL) {
+            return null;
+        }
+
+        return $this->maxUsd() ?? $this->targetUsd();
     }
 
     /** @return array<string,mixed> */

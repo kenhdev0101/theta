@@ -31,6 +31,9 @@ final class OptionOrderIntent implements ReservableIntent
         public readonly string $marketHours = 'regular_hours',
         public readonly float $contractMultiplier = 100.0,
         public readonly string $source = 'manual_probe',
+        public readonly ?string $logicalOrderId = null,
+        public readonly string $strategyLabel = 'theta_option_single_leg',
+        public readonly array $metadata = [],
     ) {}
 
     /**
@@ -69,6 +72,10 @@ final class OptionOrderIntent implements ReservableIntent
 
     public function intentKey(string $tradingDay): string
     {
+        if ($this->logicalOrderId !== null) {
+            return hash('sha256', 'durable|'.$this->strategyLabel.'|'.$this->logicalOrderId);
+        }
+
         return hash('sha256', implode('|', [
             $tradingDay,
             'option',
@@ -113,6 +120,9 @@ final class OptionOrderIntent implements ReservableIntent
             'market_hours' => $this->marketHours,
             'contract_multiplier' => $this->contractMultiplier,
             'source' => $this->source,
+            'logical_order_id' => $this->logicalOrderId,
+            'strategy_label' => $this->strategyLabel,
+            'metadata' => $this->metadata,
         ];
     }
 
@@ -135,6 +145,9 @@ final class OptionOrderIntent implements ReservableIntent
             marketHours: $this->marketHours,
             contractMultiplier: $this->contractMultiplier,
             source: $this->source,
+            logicalOrderId: $this->logicalOrderId,
+            strategyLabel: $this->strategyLabel,
+            metadata: $this->metadata,
         );
     }
 }

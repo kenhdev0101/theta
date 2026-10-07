@@ -221,6 +221,20 @@ class OptionExecutorPlacementTest extends TestCase
         $this->assertSame('risk_aborted', RobinhoodTradeJournal::sole()->status);
     }
 
+    public function test_convex_probe_rechecks_quote_time_after_broker_review_before_placement(): void
+    {
+        $this->fakeMcp();
+        $context = $this->greenContext();
+        $context['quote']['updated_at'] = now()->subMinutes(2)->toIso8601String();
+
+        $result = $this->executor()->execute($this->intent(['source' => 'theta:convex-probe']), $context);
+
+        $this->assertSame('LIVE_RISK_ABORTED', $result['classification']);
+        $this->assertContains('quote_freshness:quote_stale_before_place', $result['verdict']->blockReasons());
+        $this->assertSame(1, $this->reviewCalls);
+        $this->assertCount(0, $this->placedRefIds);
+    }
+
     public function test_pre_review_block_generates_no_broker_review_traffic(): void
     {
         $this->fakeMcp();

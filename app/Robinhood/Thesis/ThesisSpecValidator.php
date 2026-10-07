@@ -76,15 +76,22 @@ final class ThesisSpecValidator
             return $blockers;
         }
 
-        $seen = [];
+        // First pass: the leg-id set, so a probe can be checked against the
+        // sibling it scouts.
+        $byId = [];
         foreach ($legs as $leg) {
             $id = $leg->legId();
-            if ($id !== '' && isset($seen[$id])) {
+            if ($id !== '' && isset($byId[$id])) {
                 $blockers[] = $this->leg($id, 'duplicate_leg_id');
             }
-            $seen[$id] = true;
+            $byId[$id] = $leg;
+        }
 
+        foreach ($legs as $leg) {
             foreach ($this->legBlockers($leg) as $reason) {
+                $blockers[] = $reason;
+            }
+            foreach ($this->probeBlockers($leg, $byId) as $reason) {
                 $blockers[] = $reason;
             }
         }
@@ -256,6 +263,60 @@ final class ThesisSpecValidator
         return $out;
     }
 
+    /** @param array<string,ThesisSpecLeg> $byId
+     * @return list<string>
+     */
+    private function probeBlockers(ThesisSpecLeg $leg, array $byId): array
+    {
+        $id = $leg->legId();
+        $out = [];
+        if (! in_array($leg->role(), [ThesisSpecLeg::ROLE_CORE, ThesisSpecLeg::ROLE_PROBE], true)) {
+            $out[] = $this->leg($id, 'role_unsupported');
+        }
+        if ($leg->isProbe() && ! $leg->isOption()) {
+            $out[] = $this->leg($id, 'probe_requires_option_leg');
+        }
+        if ($leg->scouts() !== null) {
+            $sibling = $byId[$leg->scouts()] ?? null;
+            if (! $leg->isProbe() || ! $sibling instanceof ThesisSpecLeg || $sibling->role() !== ThesisSpecLeg::ROLE_CORE) {
+                $out[] = $this->leg($id, 'scouts_requires_core_sibling');
+            }
+        }
+        if (! $leg->isOption()) {
+            return $out;
+        }
+        $mode = $leg->moneynessMode();
+        if (! in_array($mode, [ThesisSpecLeg::MONEYNESS_ATM, ThesisSpecLeg::MONEYNESS_DELTA, ThesisSpecLeg::MONEYNESS_OTM_PCT], true)) {
+            $out[] = $this->leg($id, 'moneyness_mode_unsupported');
+        }
+        if ($mode === ThesisSpecLeg::MONEYNESS_DELTA && (($delta = $leg->targetDelta()) === null || $delta <= 0 || $delta >= 1)) {
+            $out[] = $this->leg($id, 'target_delta_invalid');
+        }
+        if ($mode === ThesisSpecLeg::MONEYNESS_OTM_PCT && (($otm = $leg->otmPct()) === null || $otm <= 0 || $otm >= 100)) {
+            $out[] = $this->leg($id, 'otm_pct_invalid');
+        }
+        if (! $leg->isFringe()) {
+            return $out;
+        }
+        if (! $leg->hasFastExit() || ! $leg->hasFastExitMaxHold()) {
+            $out[] = $this->leg($id, 'fringe_requires_fast_exit_max_hold');
+        }
+        if (($minutes = $leg->fastExitMaxHoldMinutes()) !== null && $minutes <= 0) {
+            $out[] = $this->leg($id, 'fast_exit_max_hold_minutes_invalid');
+        }
+        if (($days = $leg->fastExitMaxHoldDte()) !== null && $days < 0) {
+            $out[] = $this->leg($id, 'fast_exit_max_hold_dte_invalid');
+        }
+        if (($multiple = $leg->fastExitProfitTargetMult()) !== null && $multiple <= 1) {
+            $out[] = $this->leg($id, 'fast_exit_profit_target_mult_invalid');
+        }
+        if (($stop = $leg->fastExitHardStopPct()) !== null && ($stop <= 0 || $stop >= 100)) {
+            $out[] = $this->leg($id, 'fast_exit_hard_stop_pct_invalid');
+        }
+
+        return $out;
+    }
+
     /**
      * @param  array{per_play_max_usd?: float, per_day_max_usd?: float, max_legs?: int}  $caps
      * @return list<string>
@@ -309,7 +370,7 @@ final class ThesisSpecValidator
             // A balance-fraction leg with no absolute ceiling scales with the
             // account unbounded — fine while the account is tiny, worth a flag
             // before it is not.
-            if ($leg->sizingMode() === ThesisSpecLeg::SIZING_BALANCE_FRACTION && $leg->maxUsd() === null) {
+            if ($leg->sizingMode() === ThesisSpecLeg::SIZING_BALANCE_FRACTION && $leg->maxUsd() === null && ! $leg->isProbe()) {
                 $out[] = $this->leg($id, 'balance_fraction_without_max_usd_ceiling');
             }
 
