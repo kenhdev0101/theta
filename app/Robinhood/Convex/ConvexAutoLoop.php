@@ -18,7 +18,7 @@ final class ConvexAutoLoop
 {
     private readonly ConvexProbeLifecycle $lifecycle;
 
-    public function __construct(RobinhoodMcpClient $client, private readonly array $cfg, JsonlRecorder $recorder)
+    public function __construct(private readonly RobinhoodMcpClient $client, private readonly array $cfg, JsonlRecorder $recorder)
     {
         $this->lifecycle = new ConvexProbeLifecycle($client, $cfg, $recorder);
     }
@@ -31,6 +31,7 @@ final class ConvexAutoLoop
             return [['event' => 'busy']];
         }
         try {
+            $this->client->setCreditLane('stewardship');
             $path = (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv'));
             $events = [];
             $matrixHealthy = true;
@@ -92,6 +93,7 @@ final class ConvexAutoLoop
                 || (bool) data_get($this->cfg, 'kill_switch', true) || ! $this->entryHours()) {
                 return $events;
             }
+            $this->client->setCreditLane('standard');
             $tickers = array_map('strtoupper', (array) data_get($this->cfg, 'convex.tickers', []));
             foreach ($latest as $item) {
                 $row = $item['row'];
@@ -139,6 +141,7 @@ final class ConvexAutoLoop
 
             return $events;
         } finally {
+            $this->client->setCreditLane('standard');
             $release();
         }
     }

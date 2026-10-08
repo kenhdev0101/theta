@@ -15,7 +15,7 @@ final class ConvexProbeContractSelector
 
     /** @return array{contract?:array,quote?:array,blockers:list<string>} */
     /** @param list<string> $excludedOptionIds */
-    public function select(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds = [], ?float $hardStopPct = null): array
+    public function select(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds = [], ?float $hardStopPct = null, ?float $profitTargetMult = null): array
     {
         if ($minDte < 1 || $maxDte < $minDte || $targetDelta <= 0 || $targetDelta >= 1 || $maxPremium <= 0) {
             return ['blockers' => ['probe_selection_invalid']];
@@ -168,6 +168,7 @@ final class ConvexProbeContractSelector
                     $spreadBps = ($ask - $bid) / $mid * 10000;
                     $pricing = $hardStopPct === null ? null : ConvexEntryPricing::quote(
                         $bid, $ask, $hardStopPct, (float) data_get($this->cfg, 'convex.entry_repeg_cap_frac', 0.5),
+                        $profitTargetMult, (float) data_get($this->cfg, 'convex.round_trip_cost_budget_fraction', 0.5),
                     );
                     $limit = $pricing['limit'] ?? ceil($ask * 100) / 100;
                     $premium = $limit * 100;
@@ -205,6 +206,10 @@ final class ConvexProbeContractSelector
                             'delta' => (float) $quote['delta'], 'updated_at' => $updated,
                             'age_seconds' => $age, 'stale' => false,
                             'entry_limit' => $limit,
+                            'entry_cost_bps' => $pricing['entry_cost_bps'] ?? null,
+                            'exit_cost_bps' => $pricing['exit_cost_bps'] ?? null,
+                            'round_trip_cost_bps' => $pricing['round_trip_cost_bps'] ?? null,
+                            'round_trip_budget_bps' => $pricing['round_trip_budget_bps'] ?? null,
                         ],
                     ];
                 }

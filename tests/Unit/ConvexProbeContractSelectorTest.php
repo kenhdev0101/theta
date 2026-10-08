@@ -79,9 +79,12 @@ final class ConvexProbeContractSelectorTest extends TestCase
         $bounded = (new ConvexProbeContractSelector($client, [
             'convex' => ['entry_repeg_cap_frac' => 0.5],
             'options' => ['min_quote_fresh_seconds' => 60, 'max_spread_bps' => 500],
-        ]))->select('XLF', 'call', 71, 71, 0.205, 50.0, [], 30.0);
-        $this->assertSame([], $bounded['blockers']);
-        $this->assertSame('wide-58', $bounded['contract']['option_id']);
-        $this->assertSame(0.44, $bounded['quote']['entry_limit']);
+        ]))->select('XLF', 'call', 71, 71, 0.205, 50.0, [], 30.0, 1.30);
+        $this->assertSame([
+            'no_fresh_tradable_delta_contract_within_premium_cap',
+            'premium_above_cash_ceiling:1',
+            'convex_round_trip_cost_exceeds_budget:1',
+        ], $bounded['blockers']);
+        $this->assertArrayNotHasKey('contract', $bounded);
     }
 }

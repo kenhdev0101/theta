@@ -48,6 +48,11 @@ class RobinhoodMcpClient
         );
     }
 
+    public function setCreditLane(string $lane): void
+    {
+        $this->transport->setCreditLane($lane);
+    }
+
     /** Broker capability read — the advertised tool surface (options-lane activation signal). */
     public function listTools(): array
     {

@@ -245,6 +245,36 @@ class OptionRailPipelineTest extends TestCase
         $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $smallRisk->blockReasons());
     }
 
+    public function test_convex_entry_requires_round_trip_bps_to_fit_target_and_stop(): void
+    {
+        $quote = ['bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+            'age_seconds' => 1.0, 'stale' => false];
+        $intent = $this->intent([
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.44,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                'profit_target_mult' => 1.30],
+        ]);
+        $verdict = $this->evaluate($intent, ['convex' => ['entry_repeg_cap_frac' => 0.5,
+            'round_trip_cost_budget_fraction' => 0.5]], ['quote' => $quote]);
+        $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $verdict->blockReasons());
+
+        $quote['bid'] = 0.43;
+        $quote['ask'] = 0.48;
+        $quote['mid'] = 0.455;
+        $quote['spread_bps'] = 1098.90;
+        $intent = $this->intent([
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.46,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                'profit_target_mult' => 1.30],
+        ]);
+        $verdict = $this->evaluate($intent, ['convex' => ['entry_repeg_cap_frac' => 0.5,
+            'round_trip_cost_budget_fraction' => 0.5]], ['quote' => $quote]);
+        $this->assertSame(OptionRailVerdict::ALLOW, $verdict->verdict());
+        $spread = collect($verdict->toArray()['ledger'])->firstWhere('gate', 'spread');
+        $this->assertEqualsWithDelta(652.17, $spread['detail']['round_trip_cost_bps'], 0.01);
+        $this->assertEqualsWithDelta(1500, $spread['detail']['round_trip_budget_bps'], 0.01);
+    }
+
     public function test_wide_spread_does_not_block_sell_to_close_at_live_bid(): void
     {
         $verdict = $this->evaluate(

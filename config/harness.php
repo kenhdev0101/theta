@@ -33,6 +33,7 @@ return [
     'broker_credits' => [
         'enabled' => (bool) env('HARNESS_BROKER_CREDITS_ENABLED', true),
         'max_per_minute' => (int) env('HARNESS_BROKER_CREDITS_PER_MINUTE', 45),
+        'reserve_for_stewardship' => (int) env('HARNESS_BROKER_CREDITS_STEWARDSHIP_RESERVE', 9),
         'mode' => env('HARNESS_BROKER_CREDITS_MODE', 'wait'), // wait|fail
         'max_wait_seconds' => (int) env('HARNESS_BROKER_CREDITS_MAX_WAIT_SECONDS', 20),
         'cache_key' => env('HARNESS_BROKER_CREDITS_KEY', 'theta:robinhood:mcp:credits'),
@@ -87,6 +88,9 @@ return [
         'auto_hard_stop_pct' => (float) env('HARNESS_CONVEX_AUTO_HARD_STOP_PCT', 30),
         // Shared by matrix fill math and the live resting entry cap.
         'entry_repeg_cap_frac' => (float) env('HARNESS_CONVEX_ENTRY_REPEG_CAP_FRAC', 0.5),
+        // Maximum modeled round-trip quote friction as a fraction of the
+        // smaller of the profit target and hard-stop move in premium BPS.
+        'round_trip_cost_budget_fraction' => (float) env('HARNESS_CONVEX_ROUND_TRIP_COST_BUDGET_FRACTION', 0.5),
         'entry_rest_max_seconds' => (int) env('HARNESS_CONVEX_ENTRY_REST_MAX_SECONDS', 180),
         'entry_cancel_retry_seconds' => (int) env('HARNESS_CONVEX_ENTRY_CANCEL_RETRY_SECONDS', 30),
         // Scheduler arm baked into config (not the box .env) so the read-only

@@ -123,8 +123,8 @@ final class ConvexProbeLifecycle
                 $matrixRow = isset($run->spec['matrix_source'])
                     ? ConvexMatrixAdmission::verify((array) $run->spec['matrix_source'], $leg, (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')))
                     : null;
-                if ($matrixRow !== null && $leg->fastExitHardStopPct() === null) {
-                    return $this->mark($run, 'staged', 'matrix_entry_hard_stop_required');
+                if ($matrixRow !== null && ($leg->fastExitHardStopPct() === null || $leg->fastExitProfitTargetMult() === null)) {
+                    return $this->mark($run, 'staged', 'matrix_entry_risk_targets_required');
                 }
                 $context = OptionBrokerContext::assemble($this->client, $this->cfg);
                 foreach ((array) ($context['open_option_orders'] ?? []) as $order) {
@@ -168,6 +168,7 @@ final class ConvexProbeLifecycle
                     $leg->symbol(), (string) $run->option_type, (int) $leg->dteMin(), (int) $leg->dteMax(),
                     (float) $leg->targetDelta(), $ceiling, array_values(array_unique($reservedOptionIds)),
                     $matrixRow !== null ? $leg->fastExitHardStopPct() : null,
+                    $matrixRow !== null ? $leg->fastExitProfitTargetMult() : null,
                 );
                 if ($selection['blockers'] !== []) {
                     return $this->mark($run, 'staged', implode('; ', $selection['blockers']));
@@ -526,6 +527,7 @@ final class ConvexProbeLifecycle
                 'thesis_id' => $run->thesis_id, 'leg_id' => $run->leg_id, 'spec_hash' => $run->spec_hash,
                 'entry_mode' => $side === 'buy' && isset($run->spec['matrix_source']) ? 'convex_bounded_resting' : null,
                 'hard_stop_pct' => $side === 'buy' ? $this->leg($run)->fastExitHardStopPct() : null,
+                'profit_target_mult' => $side === 'buy' ? $this->leg($run)->fastExitProfitTargetMult() : null,
             ],
         );
     }
@@ -579,6 +581,8 @@ final class ConvexProbeLifecycle
             (float) $quote['bid'], (float) $quote['ask'], (float) $run->entry_limit_price,
             (float) $this->leg($run)->fastExitHardStopPct(),
             (float) data_get($this->cfg, 'convex.entry_repeg_cap_frac', 0.5),
+            $this->leg($run)->fastExitProfitTargetMult(),
+            (float) data_get($this->cfg, 'convex.round_trip_cost_budget_fraction', 0.5),
         )) {
             return 'resting_bid_outside_thesis_risk';
         }

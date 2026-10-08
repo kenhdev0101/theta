@@ -25,6 +25,8 @@ class McpTransport
 
     private ?string $sessionId = null;
 
+    private string $creditLane = 'standard';
+
     public function __construct(
         private readonly string $endpoint,
         private readonly OAuthTokenStore $tokens,
@@ -36,6 +38,14 @@ class McpTransport
     public function endpoint(): string
     {
         return $this->endpoint;
+    }
+
+    public function setCreditLane(string $lane): void
+    {
+        if (! in_array($lane, ['standard', 'stewardship'], true)) {
+            throw new RuntimeException("broker credits lane '{$lane}' is invalid");
+        }
+        $this->creditLane = $lane;
     }
 
     /**
@@ -179,7 +189,7 @@ class McpTransport
         $response = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
-            $this->credits?->acquire($operation);
+            $this->credits?->acquire($operation, lane: $this->creditLane);
 
             $response = Http::withToken($token)
                 ->withHeaders(array_filter([

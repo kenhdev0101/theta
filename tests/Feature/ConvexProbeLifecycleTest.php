@@ -243,7 +243,7 @@ final class ConvexProbeLifecycleTest extends TestCase
         $this->assertIsString($path);
         try {
             $hash = $this->writeRestingMatrix($path);
-            $quote = ['bid_price' => '0.35', 'ask_price' => '0.48'];
+            $quote = ['bid_price' => '0.41', 'ask_price' => '0.47'];
             $state = 'open';
             $cancels = 0;
             $client = $this->createMock(RobinhoodMcpClient::class);

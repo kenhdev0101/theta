@@ -52,4 +52,21 @@ class BrokerCreditLimiterTest extends TestCase
 
         $limiter->acquire('second');
     }
+
+    public function test_standard_lane_leaves_shared_credits_for_stewardship(): void
+    {
+        Cache::store('array')->flush();
+        $limiter = new BrokerCreditLimiter(true, 3, 'test:broker:reserved', 'fail', 0, Cache::store('array'), 1);
+        $limiter->acquire('ingest-one');
+        $limiter->acquire('ingest-two');
+        try {
+            $limiter->acquire('ingest-three');
+            $this->fail('standard lane spent the stewardship reserve');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('lane=standard ceiling=2', $e->getMessage());
+        }
+        $limiter->acquire('position-exit', lane: 'stewardship');
+        $this->expectException(RuntimeException::class);
+        $limiter->acquire('another-exit', lane: 'stewardship');
+    }
 }
