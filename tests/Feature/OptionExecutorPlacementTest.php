@@ -42,6 +42,8 @@ class OptionExecutorPlacementTest extends TestCase
 
     private ?\Closure $onReview = null;
 
+    private ?array $liveOptionQuote = null;
+
     private function fakeMcp(): void
     {
         Http::fake(function (Request $request) {
@@ -87,6 +89,12 @@ class OptionExecutorPlacementTest extends TestCase
                             ],
                         ],
                     ]);
+                }
+
+                if ($tool === 'get_option_quotes' && $this->liveOptionQuote !== null) {
+                    return $this->toolResponse($payload['id'], ['data' => ['results' => [
+                        ['quote' => $this->liveOptionQuote],
+                    ]]]);
                 }
 
                 return $this->toolResponse($payload['id'], ['ok' => true]);
@@ -208,6 +216,8 @@ class OptionExecutorPlacementTest extends TestCase
             'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
                 'thesis_id' => 'convex-fixture', 'spec_hash' => str_repeat('a', 64)],
         ]);
+        $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => '0.35',
+            'ask_price' => '0.48', 'updated_at' => now()->toIso8601String()];
 
         $missing = $this->executor()->execute($intent, $context);
         $this->assertSame('LIVE_RISK_ABORTED', $missing['classification']);
@@ -259,6 +269,57 @@ class OptionExecutorPlacementTest extends TestCase
             $this->assertSame('0.44', $this->placedArguments[0]['price']);
             $this->assertSame('buy', $this->placedArguments[0]['legs'][0]['side']);
             $this->assertSame('open', $this->placedArguments[0]['legs'][0]['position_effect']);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function test_convex_entry_aborts_if_live_bid_deteriorates_during_broker_review(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
+        config()->set('harness.options.max_spread_bps', 500);
+        config()->set('harness.convex.entry_repeg_cap_frac', 0.5);
+        $path = tempnam(sys_get_temp_dir(), 'convex-place-');
+        $this->assertIsString($path);
+        try {
+            $columns = ['ticker', 'dte', 'snapshot_ts', 'verdict', 'failed_signals', 'pending_signals', 'far_delta'];
+            $admit = ['XLF', '72', '2026-10-07T18:00:00Z', 'ADMIT', '', '', '0.20'];
+            $handle = fopen($path, 'w');
+            fputcsv($handle, $columns);
+            fputcsv($handle, $admit);
+            fclose($handle);
+            $hash = hash('sha256', json_encode(array_combine($columns, $admit), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            config()->set('harness.convex.matrix_path', $path);
+            $intent = $this->intent([
+                'limitPrice' => 0.44, 'source' => 'theta:convex-probe',
+                'underlyingSymbol' => 'XLF', 'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
+                'strategyLabel' => 'convex_thesis_probe',
+                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                    'thesis_id' => 'convex-deteriorated', 'spec_hash' => str_repeat('b', 64)],
+            ]);
+            ConvexProbeRun::query()->create([
+                'thesis_id' => 'convex-deteriorated', 'leg_id' => 'probe',
+                'account_number' => (string) config('harness.agentic_account'), 'status' => 'entry_pending',
+                'spec' => ['matrix_source' => ['row_sha256' => $hash],
+                    'legs' => [['fast_exit' => ['hard_stop_pct' => 30.0]]]],
+                'spec_hash' => str_repeat('b', 64), 'underlying_symbol' => 'XLF', 'option_type' => 'call',
+                'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.44,
+                'entry_intent_key' => $intent->intentKey(now()->toDateString()),
+            ]);
+            $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => '0.20',
+                'ask_price' => '0.48', 'updated_at' => now()->toIso8601String()];
+            $this->fakeMcp();
+            $context = $this->greenContext();
+            $context['quote'] = ['bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+                'age_seconds' => 1.0, 'stale' => false, 'updated_at' => now()->toIso8601String()];
+            $context['convex_matrix_source'] = ['row_sha256' => $hash];
+
+            $result = $this->executor()->execute($intent, $context);
+
+            $this->assertSame('LIVE_RISK_ABORTED', $result['classification']);
+            $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $result['verdict']->blockReasons());
+            $this->assertSame(1, $this->reviewCalls);
+            $this->assertSame([], $this->placedArguments);
         } finally {
             unlink($path);
         }

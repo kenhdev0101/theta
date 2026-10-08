@@ -8,6 +8,7 @@ use App\Models\ConvexProbeRun;
 use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Execution\OrderRefStore;
+use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Support\Carbon;
@@ -85,10 +86,30 @@ final class OptionExecutor
             return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
         }
 
-        // Review is a broker round trip. The convex probe must still have a
-        // fresh quote at the actual placement boundary, not merely at the
-        // earlier resolver/rail snapshots.
-        if ($intent->source === 'theta:convex-probe') {
+        // A bounded resting buy depends on the current sellable bid. Refresh
+        // the exact broker option ID after review, then rerun every rail with
+        // that quote before placing the unchanged limit.
+        if ($boundedConvex) {
+            try {
+                $quote = $this->freshConvexQuote((string) $intent->optionId);
+            } catch (\Throwable) {
+                $quote = null;
+            }
+            if ($quote === null) {
+                $verdict = new OptionRailVerdict($intent, [
+                    ...$verdict->results,
+                    OptionGateResult::block('quote_freshness', OptionRailPipeline::BLOCK_STALE_QUOTE, 'quote_unavailable_before_place'),
+                ]);
+
+                return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
+            }
+            $context['quote'] = $quote;
+            $verdict = $this->rails->evaluate($intent, $this->cfg, $context);
+            if (! $verdict->allowed()) {
+                return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
+            }
+        } elseif ($intent->source === 'theta:convex-probe') {
+            // Legacy attended probes retain their age check.
             $updatedAt = data_get($context, 'quote.updated_at');
             $maxAge = (int) data_get($this->cfg, 'options.min_quote_fresh_seconds', 10);
             try {
@@ -183,6 +204,36 @@ final class OptionExecutor
             ?? null;
 
         return is_string($brokerOrderId) && $brokerOrderId !== '' ? $brokerOrderId : null;
+    }
+
+    /** Matrix evidence is checked before broker review and again immediately before place. */
+    private function freshConvexQuote(string $optionId): ?array
+    {
+        $results = PortfolioReader::listFrom($this->client->getOptionQuotes([$optionId]), ['results']);
+        foreach ($results as $result) {
+            $quote = is_array($result) ? ($result['quote'] ?? null) : null;
+            if (! is_array($quote) || (string) ($quote['instrument_id'] ?? '') !== $optionId
+                || ! is_numeric($quote['bid_price'] ?? null) || ! is_numeric($quote['ask_price'] ?? null)
+                || ! is_string($quote['updated_at'] ?? null)) {
+                continue;
+            }
+            $bid = (float) $quote['bid_price'];
+            $ask = (float) $quote['ask_price'];
+            if ($bid <= 0 || $ask < $bid) {
+                continue;
+            }
+            $age = abs(Carbon::parse($quote['updated_at'])->diffInSeconds(now()));
+            $mid = ($bid + $ask) / 2;
+
+            return [
+                'bid' => $bid, 'ask' => $ask, 'mid' => $mid,
+                'spread_bps' => round(($ask - $bid) / $mid * 10000, 2),
+                'updated_at' => $quote['updated_at'], 'age_seconds' => $age,
+                'stale' => $age > (int) data_get($this->cfg, 'options.min_quote_fresh_seconds', 10),
+            ];
+        }
+
+        return null;
     }
 
     /** Matrix evidence is checked before broker review and again immediately before place. */
