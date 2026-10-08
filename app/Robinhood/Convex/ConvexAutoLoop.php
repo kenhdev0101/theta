@@ -182,6 +182,11 @@ final class ConvexAutoLoop
         if ($hold < 1 || $hold > 30) {
             throw new RuntimeException('convex auto hold must be 1–30 minutes');
         }
+        $profitMultiple = (float) data_get($this->cfg, 'convex.auto_profit_target_mult', 1.30);
+        $stop = (float) data_get($this->cfg, 'convex.auto_hard_stop_pct', 30);
+        if ($profitMultiple <= 1 || $stop <= 0 || $stop >= 100) {
+            throw new RuntimeException('convex auto profit target or hard stop is invalid');
+        }
 
         return ThesisSpec::fromArray([
             'spec_version' => '1', 'thesis_id' => $thesisId, 'owner' => 'theta', 'agent_id' => 'theta/convex-auto',
@@ -193,12 +198,12 @@ final class ConvexAutoLoop
                 'dte' => ['min' => $dte, 'max' => $dte],
                 'moneyness' => ['mode' => 'delta', 'target' => $target],
                 'sizing' => ['mode' => 'balance_fraction', 'fraction' => 1.0],
-                'entry' => ['type' => 'marketable_limit'],
+                'entry' => ['type' => 'bounded_resting_limit'],
                 'invalidation' => [
                     'thesis_stop' => 'external_event:thesis_expired',
                     'time_stop' => Carbon::now('America/New_York')->addDay()->toDateString(),
                 ],
-                'fast_exit' => ['max_hold_minutes' => $hold, 'profit_target_mult' => 1.30, 'hard_stop_pct' => 30],
+                'fast_exit' => ['max_hold_minutes' => $hold, 'profit_target_mult' => $profitMultiple, 'hard_stop_pct' => $stop],
             ]],
         ]);
     }

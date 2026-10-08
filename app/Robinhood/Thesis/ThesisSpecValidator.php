@@ -129,7 +129,8 @@ final class ThesisSpecValidator
             $out[] = $reason;
         }
 
-        if (! in_array($leg->entryType(), [ThesisSpecLeg::ENTRY_MARKETABLE_LIMIT], true)) {
+        if ($leg->entryType() !== ThesisSpecLeg::ENTRY_MARKETABLE_LIMIT
+            && ! ($leg->entryType() === ThesisSpecLeg::ENTRY_BOUNDED_RESTING_LIMIT && $leg->isProbe() && $leg->isOption())) {
             $out[] = $this->leg($id, 'entry_type_unsupported');
         }
 

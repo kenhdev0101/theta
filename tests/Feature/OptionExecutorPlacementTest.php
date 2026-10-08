@@ -189,6 +189,30 @@ class OptionExecutorPlacementTest extends TestCase
         $this->assertSame('long_call', $journal->intent);
     }
 
+    public function test_convex_resting_entry_preserves_bounded_limit_through_review_and_place(): void
+    {
+        config()->set('harness.options.max_spread_bps', 500);
+        config()->set('harness.convex.entry_repeg_cap_frac', 0.5);
+        $this->fakeMcp();
+        $context = $this->greenContext();
+        $context['quote'] = [
+            'bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+            'age_seconds' => 1.0, 'stale' => false, 'updated_at' => now()->toIso8601String(),
+        ];
+        $intent = $this->intent([
+            'limitPrice' => 0.44, 'source' => 'theta:convex-probe',
+            'strategyLabel' => 'convex_thesis_probe',
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+        ]);
+
+        $result = $this->executor()->execute($intent, $context);
+
+        $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);
+        $this->assertSame('0.44', $this->placedArguments[0]['price']);
+        $this->assertSame('buy', $this->placedArguments[0]['legs'][0]['side']);
+        $this->assertSame('open', $this->placedArguments[0]['legs'][0]['position_effect']);
+    }
+
     public function test_new_matrix_reject_during_review_blocks_convex_placement(): void
     {
         $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));

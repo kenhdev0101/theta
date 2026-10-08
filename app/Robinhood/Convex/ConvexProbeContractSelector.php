@@ -15,7 +15,7 @@ final class ConvexProbeContractSelector
 
     /** @return array{contract?:array,quote?:array,blockers:list<string>} */
     /** @param list<string> $excludedOptionIds */
-    public function select(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds = []): array
+    public function select(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds = [], ?float $hardStopPct = null): array
     {
         if ($minDte < 1 || $maxDte < $minDte || $targetDelta <= 0 || $targetDelta >= 1 || $maxPremium <= 0) {
             return ['blockers' => ['probe_selection_invalid']];
@@ -64,6 +64,16 @@ final class ConvexProbeContractSelector
         }
 
         $candidates = [];
+        $rejected = [
+            'excluded_option_id' => 0,
+            'invalid_two_sided_quote' => 0,
+            'delta_outside_target' => 0,
+            'quote_stale' => 0,
+            'spread_above_rail' => 0,
+            'convex_exit_spread_consumes_thesis_risk' => 0,
+            'premium_above_cash_ceiling' => 0,
+        ];
+        $quotedInstruments = 0;
         $maxPages = max(1, min(10, (int) data_get($this->cfg, 'convex.max_instrument_pages', 10)));
         $quoteAgeLimit = max(1, (int) data_get($this->cfg, 'options.min_quote_fresh_seconds', 10));
         $maxSpreadBps = (float) data_get($this->cfg, 'options.max_spread_bps', 1500);
@@ -124,30 +134,66 @@ final class ConvexProbeContractSelector
                     $quote = is_array($result['quote'] ?? null) ? $result['quote'] : [];
                     $id = (string) ($quote['instrument_id'] ?? '');
                     $instrument = $instruments[$id] ?? null;
-                    if ($instrument === null || in_array($id, $excludedOptionIds, true)) {
+                    if ($instrument === null) {
+                        continue;
+                    }
+                    $quotedInstruments++;
+                    if (in_array($id, $excludedOptionIds, true)) {
+                        $rejected['excluded_option_id']++;
+
                         continue;
                     }
                     $bid = self::positive($quote['bid_price'] ?? null);
                     $ask = self::positive($quote['ask_price'] ?? null);
                     $delta = self::positive(isset($quote['delta']) ? abs((float) $quote['delta']) : null);
                     $updated = $quote['updated_at'] ?? null;
-                    if ($bid === null || $ask === null || $ask < $bid || $delta === null
-                        || abs($delta - $targetDelta) > 0.05 || ! is_string($updated)) {
+                    if ($bid === null || $ask === null || $ask < $bid || $delta === null || ! is_string($updated)) {
+                        $rejected['invalid_two_sided_quote']++;
+
+                        continue;
+                    }
+                    if (abs($delta - $targetDelta) > 0.05) {
+                        $rejected['delta_outside_target']++;
+
                         continue;
                     }
                     try {
                         $age = abs(Carbon::parse($updated)->diffInSeconds(Carbon::now()));
                     } catch (\Throwable) {
+                        $rejected['quote_stale']++;
+
                         continue;
                     }
                     $mid = ($bid + $ask) / 2;
                     $spreadBps = ($ask - $bid) / $mid * 10000;
-                    $premium = ceil($ask * 100) / 100 * 100;
-                    if ($age > $quoteAgeLimit || $spreadBps > $maxSpreadBps || $premium > $maxPremium) {
+                    $pricing = $hardStopPct === null ? null : ConvexEntryPricing::quote(
+                        $bid, $ask, $hardStopPct, (float) data_get($this->cfg, 'convex.entry_repeg_cap_frac', 0.5),
+                    );
+                    $limit = $pricing['limit'] ?? ceil($ask * 100) / 100;
+                    $premium = $limit * 100;
+                    $blocked = false;
+                    if ($age > $quoteAgeLimit) {
+                        $rejected['quote_stale']++;
+                        $blocked = true;
+                    }
+                    if ($hardStopPct === null && $spreadBps > $maxSpreadBps) {
+                        $rejected['spread_above_rail']++;
+                        $blocked = true;
+                    }
+                    if ($pricing !== null && ! isset($pricing['limit'])) {
+                        $rejected[$pricing['blocker']] = ($rejected[$pricing['blocker']] ?? 0) + 1;
+                        $blocked = true;
+                    }
+                    if ($premium > $maxPremium) {
+                        $rejected['premium_above_cash_ceiling']++;
+                        $blocked = true;
+                    }
+                    if ($blocked) {
                         continue;
                     }
                     $candidates[] = [
                         'score' => abs($delta - $targetDelta),
+                        'entry_limit' => $limit,
                         'contract' => [
                             'option_id' => $id, 'chain_id' => $instrument['chain_id'] ?? $chain['id'],
                             'chain_symbol' => strtoupper($symbol), 'underlying_type' => $instrument['underlying_type'] ?? 'equity',
@@ -158,6 +204,7 @@ final class ConvexProbeContractSelector
                             'bid' => $bid, 'ask' => $ask, 'mid' => $mid, 'spread_bps' => round($spreadBps, 2),
                             'delta' => (float) $quote['delta'], 'updated_at' => $updated,
                             'age_seconds' => $age, 'stale' => false,
+                            'entry_limit' => $limit,
                         ],
                     ];
                 }
@@ -166,7 +213,17 @@ final class ConvexProbeContractSelector
 
         usort($candidates, static fn (array $a, array $b): int => ($a['score'] <=> $b['score']) ?: ($a['quote']['ask'] <=> $b['quote']['ask']));
         if ($candidates === []) {
-            return ['blockers' => ['no_fresh_tradable_delta_contract_within_premium_cap']];
+            $blockers = ['no_fresh_tradable_delta_contract_within_premium_cap'];
+            if ($quotedInstruments === 0) {
+                $blockers[] = 'no_quoted_instrument_in_wing';
+            }
+            foreach ($rejected as $reason => $count) {
+                if ($count > 0) {
+                    $blockers[] = $reason.':'.$count;
+                }
+            }
+
+            return ['blockers' => $blockers];
         }
 
         return ['contract' => $candidates[0]['contract'], 'quote' => $candidates[0]['quote'], 'blockers' => []];

@@ -107,10 +107,11 @@ final class ConvexProbeLifecycleTest extends TestCase
             'exit_due_at' => $now->copy()->addMinutes(10),
         ]);
 
-        $this->assertFalse(ConvexProbeLifecycle::exitTriggered($run, ['mid' => 1.00], $now));
-        $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['mid' => 1.31], $now));
-        $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['mid' => 0.69], $now));
-        $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['mid' => 1.00], $now->copy()->addMinutes(10)));
+        $this->assertFalse(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 0.95, 'mid' => 1.00], $now));
+        $this->assertFalse(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 1.25, 'mid' => 1.31], $now));
+        $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 1.31, 'mid' => 1.36], $now));
+        $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 0.69, 'mid' => 0.74], $now));
+        $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 0.95], $now->copy()->addMinutes(10)));
     }
 
     public function test_external_expiry_precedes_all_wall_clock_triggers_and_is_idempotent(): void

@@ -217,6 +217,34 @@ class OptionRailPipelineTest extends TestCase
         $this->assertContains('spread:spread_above_max', $verdict->blockReasons());
     }
 
+    public function test_convex_resting_entry_uses_thesis_exit_risk_instead_of_fixed_spread_cap(): void
+    {
+        $intent = $this->intent([
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.44,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+        ]);
+        $quote = ['bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+            'age_seconds' => 1.0, 'stale' => false];
+        $verdict = $this->evaluate($intent, ['options' => ['max_spread_bps' => 500],
+            'convex' => ['entry_repeg_cap_frac' => 0.5]], ['quote' => $quote]);
+
+        $this->assertSame(OptionRailVerdict::ALLOW, $verdict->verdict(), implode(', ', $verdict->blockReasons()));
+        $spread = collect($verdict->toArray()['ledger'])->firstWhere('gate', 'spread');
+        $this->assertSame(20.45, $spread['detail']['immediate_exit_loss_pct']);
+
+        $crossing = $this->evaluate($this->intent([
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.48,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+        ]), ['options' => ['max_spread_bps' => 500]], ['quote' => $quote]);
+        $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $crossing->blockReasons());
+
+        $smallRisk = $this->evaluate($this->intent([
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.42,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 15.0],
+        ]), ['options' => ['max_spread_bps' => 500]], ['quote' => $quote]);
+        $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $smallRisk->blockReasons());
+    }
+
     public function test_wide_spread_does_not_block_sell_to_close_at_live_bid(): void
     {
         $verdict = $this->evaluate(

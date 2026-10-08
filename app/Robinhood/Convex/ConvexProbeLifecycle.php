@@ -62,9 +62,13 @@ final class ConvexProbeLifecycle
             throw new RuntimeException('probe thesis_stop must be external_event:thesis_expired for mechanical supervision');
         }
         if ($leg->entryOffsetBps() !== 0.0 || $leg->entryMaxChaseBps() !== null) {
-            throw new RuntimeException('probe uses a single marketable-limit attempt; offset and chase rules are unsupported');
+            throw new RuntimeException('probe uses one bounded limit attempt; offset and chase rules are unsupported');
         }
         $raw = $spec->toArray();
+        if ($leg->entryType() === ThesisSpecLeg::ENTRY_BOUNDED_RESTING_LIMIT &&
+            (! isset($raw['matrix_source']) || $leg->fastExitHardStopPct() === null)) {
+            throw new RuntimeException('bounded resting entry requires matrix evidence and a thesis hard stop');
+        }
         if (isset($raw['matrix_source'])) {
             ConvexMatrixAdmission::verify((array) $raw['matrix_source'], $leg, (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')));
         }
@@ -119,6 +123,9 @@ final class ConvexProbeLifecycle
                 $matrixRow = isset($run->spec['matrix_source'])
                     ? ConvexMatrixAdmission::verify((array) $run->spec['matrix_source'], $leg, (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')))
                     : null;
+                if ($matrixRow !== null && $leg->fastExitHardStopPct() === null) {
+                    return $this->mark($run, 'staged', 'matrix_entry_hard_stop_required');
+                }
                 $context = OptionBrokerContext::assemble($this->client, $this->cfg);
                 foreach ((array) ($context['open_option_orders'] ?? []) as $order) {
                     if (! is_array($order) || ! in_array(strtolower((string) ($order['state'] ?? $order['status'] ?? '')), self::OPEN_STATES, true)) {
@@ -160,6 +167,7 @@ final class ConvexProbeLifecycle
                 $selection = (new ConvexProbeContractSelector($this->client, $this->probeConfig()))->select(
                     $leg->symbol(), (string) $run->option_type, (int) $leg->dteMin(), (int) $leg->dteMax(),
                     (float) $leg->targetDelta(), $ceiling, array_values(array_unique($reservedOptionIds)),
+                    $matrixRow !== null ? $leg->fastExitHardStopPct() : null,
                 );
                 if ($selection['blockers'] !== []) {
                     return $this->mark($run, 'staged', implode('; ', $selection['blockers']));
@@ -176,7 +184,7 @@ final class ConvexProbeLifecycle
                         return $this->mark($run, 'staged', 'contract_already_held_outside_probe');
                     }
                 }
-                $limit = ceil((float) $quote['ask'] * 100) / 100;
+                $limit = (float) ($quote['entry_limit'] ?? ceil((float) $quote['ask'] * 100) / 100);
                 if ($limit * 100 > $ceiling) {
                     return $this->mark($run, 'staged', 'one_contract_exceeds_available_cash');
                 }
@@ -454,15 +462,17 @@ final class ConvexProbeLifecycle
             return 'time_stop';
         }
         $entry = (float) $run->entry_average_price;
-        $mark = (float) ($quote['mid'] ?? 0);
-        if ($entry > 0 && $mark > 0) {
-            if (($multiple = $leg->fastExitProfitTargetMult()) !== null && $mark >= $entry * $multiple) {
+        // The bid is the executable sell-to-close reference. Mid-mark triggers
+        // can claim a gain or defer a stop that cannot be realized after spread.
+        $exitBid = (float) ($quote['bid'] ?? 0);
+        if ($entry > 0 && $exitBid > 0) {
+            if (($multiple = $leg->fastExitProfitTargetMult()) !== null && $exitBid >= $entry * $multiple) {
                 return 'profit_target';
             }
-            if (($target = $leg->targetPct()) !== null && $mark >= $entry * (1 + $target / 100)) {
+            if (($target = $leg->targetPct()) !== null && $exitBid >= $entry * (1 + $target / 100)) {
                 return 'target_pct';
             }
-            if (($stop = $leg->fastExitHardStopPct()) !== null && $mark <= $entry * (1 - $stop / 100)) {
+            if (($stop = $leg->fastExitHardStopPct()) !== null && $exitBid <= $entry * (1 - $stop / 100)) {
                 return 'hard_stop';
             }
         }
@@ -492,7 +502,11 @@ final class ConvexProbeLifecycle
             source: 'theta:convex-probe',
             logicalOrderId: $run->thesis_id.':'.$run->leg_id.':'.$side.':'.$attempt.':'.$contract['option_id'],
             strategyLabel: self::STRATEGY,
-            metadata: ['thesis_id' => $run->thesis_id, 'leg_id' => $run->leg_id, 'spec_hash' => $run->spec_hash],
+            metadata: [
+                'thesis_id' => $run->thesis_id, 'leg_id' => $run->leg_id, 'spec_hash' => $run->spec_hash,
+                'entry_mode' => $side === 'buy' && isset($run->spec['matrix_source']) ? 'convex_bounded_resting' : null,
+                'hard_stop_pct' => $side === 'buy' ? $this->leg($run)->fastExitHardStopPct() : null,
+            ],
         );
     }
 

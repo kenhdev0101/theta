@@ -129,6 +129,7 @@ final class ConvexIngestService
             '--dte', (string) $dte,
             '--call-rows', $this->json($calls['rows']),
             '--put-rows', $this->json($puts['rows']),
+            '--repeg-cap-frac', $this->num((float) data_get($this->cfg, 'convex.entry_repeg_cap_frac', 0.5)),
             '--format', 'json',
         ];
 

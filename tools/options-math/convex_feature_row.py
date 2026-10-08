@@ -69,10 +69,11 @@ def _geography(spot, dte, call_rows, atm_iv):
 
 
 def compute(ticker, bucket, spot, dte, call_rows, put_rows, realized_vol=None,
-            catalyst_days=None, snapshot_ts=None):
+            catalyst_days=None, snapshot_ts=None, repeg_cap_frac=ctf.cfs.REPEG_CAP_FRAC):
     ts = snapshot_ts or datetime.now(timezone.utc).isoformat()
     f = ctf.evaluate(ticker, spot, dte, call_rows, put_rows,
-                     realized_vol=realized_vol, catalyst_days=catalyst_days)
+                     realized_vol=realized_vol, catalyst_days=catalyst_days,
+                     repeg_cap_frac=repeg_cap_frac)
     s = f["signals"]
     atm_iv = s["iv_rv_ratio"].get("atm_iv") or s["fringe_not_rich"].get("atm_iv")
     geo = _geography(spot, dte, call_rows, atm_iv or 0.0)
@@ -139,6 +140,7 @@ def main() -> None:
     p.add_argument("--put-rows", required=True, help="JSON list of {strike,iv,delta,bid,ask}")
     p.add_argument("--realized-vol", type=float)
     p.add_argument("--catalyst-days", type=int)
+    p.add_argument("--repeg-cap-frac", type=float, default=ctf.cfs.REPEG_CAP_FRAC)
     p.add_argument("--format", choices=["json", "csv", "csv-header"], default="json")
     args = p.parse_args()
 
@@ -151,7 +153,8 @@ def main() -> None:
         print(json.dumps({"error": f"bad JSON: {e}"})); raise SystemExit(1)
 
     row = compute(args.ticker, args.bucket, args.spot, args.dte, call_rows, put_rows,
-                  realized_vol=args.realized_vol, catalyst_days=args.catalyst_days)
+                  realized_vol=args.realized_vol, catalyst_days=args.catalyst_days,
+                  repeg_cap_frac=args.repeg_cap_frac)
     if args.format == "csv":
         print(",".join(_csv_cell(row[c]) for c in FEATURE_COLUMNS))
     else:

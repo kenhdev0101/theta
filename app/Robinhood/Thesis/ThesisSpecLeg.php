@@ -37,6 +37,8 @@ final class ThesisSpecLeg
 
     public const ENTRY_MARKETABLE_LIMIT = 'marketable_limit';
 
+    public const ENTRY_BOUNDED_RESTING_LIMIT = 'bounded_resting_limit';
+
     public const STRUCTURE_LONG_CALL = 'single_leg_long_call';
 
     public const STRUCTURE_LONG_PUT = 'single_leg_long_put';

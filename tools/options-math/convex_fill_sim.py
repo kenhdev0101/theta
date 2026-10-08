@@ -45,6 +45,8 @@ def simulate(bid, ask, repeg_cap_frac=REPEG_CAP_FRAC, n_steps=N_STEPS,
              budget_bps=BUDGET_BPS, min_fill_prob=MIN_FILL_PROB,
              volume=None, open_interest=None) -> dict:
     bid = float(bid); ask = float(ask)
+    if not 0 <= repeg_cap_frac <= 1 or n_steps < 1:
+        return {"error": "need 0 <= repeg_cap_frac <= 1 and n_steps >= 1"}
     if bid <= 0 or ask <= 0 or ask < bid:
         return {"error": "need 0 < bid <= ask"}
     spread = ask - bid

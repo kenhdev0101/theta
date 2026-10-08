@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Robinhood\Options;
 
+use App\Robinhood\Convex\ConvexEntryPricing;
+
 /**
  * Dedicated pre-trade gate chain for single-leg Level 2 options. Reuses the
  * equity rail ideas (fail closed on unverified inputs, full gating ledger,
@@ -62,11 +64,11 @@ final class OptionRailPipeline
 
     /**
      * @param  bool  $includeReview  append the broker-review gate
-     * @param  bool  $includeCaps     append the capital/allocation gate. The
-     *                                decision layer evaluates candidate quality
-     *                                with this OFF (capital must not gate
-     *                                evaluation); the execution layer always
-     *                                runs it ON before placing.
+     * @param  bool  $includeCaps  append the capital/allocation gate. The
+     *                             decision layer evaluates candidate quality
+     *                             with this OFF (capital must not gate
+     *                             evaluation); the execution layer always
+     *                             runs it ON before placing.
      */
     public function evaluate(OptionOrderIntent $intent, array $cfg, array $context, bool $includeReview = true, bool $includeCaps = true): OptionRailVerdict
     {
@@ -254,6 +256,29 @@ final class OptionRailPipeline
         }
 
         $options = (array) ($cfg['options'] ?? []);
+        if ($this->isBoundedConvexEntry($intent)) {
+            $bid = $quote['bid'] ?? null;
+            $ask = $quote['ask'] ?? null;
+            $stop = $intent->metadata['hard_stop_pct'] ?? null;
+            $fraction = data_get($cfg, 'convex.entry_repeg_cap_frac', 0.5);
+            if (! is_numeric($bid) || ! is_numeric($ask) || ! is_numeric($stop) || ! is_numeric($fraction)
+                || $intent->limitPrice === null
+                || ! ConvexEntryPricing::limitAllowed((float) $bid, (float) $ask, $intent->limitPrice, (float) $stop, (float) $fraction)) {
+                return OptionGateResult::block('spread', self::BLOCK_WIDE_SPREAD, 'convex_entry_exceeds_exit_risk_or_reprice_cap');
+            }
+
+            $maxAsk = (float) ($options['max_contract_ask'] ?? 5.0);
+            if ($intent->limitPrice > $maxAsk) {
+                return OptionGateResult::block('spread', self::BLOCK_WIDE_SPREAD, 'ask_above_max');
+            }
+
+            return OptionGateResult::allow('spread', [
+                'quoted_spread_bps' => $quote['spread_bps'],
+                'entry_limit' => $intent->limitPrice,
+                'immediate_exit_loss_pct' => round(($intent->limitPrice - (float) $bid) / $intent->limitPrice * 100, 2),
+                'hard_stop_pct' => (float) $stop,
+            ]);
+        }
         $maxSpreadBps = (float) ($options['max_spread_bps'] ?? 1500);
         if ((float) $quote['spread_bps'] > $maxSpreadBps) {
             if ($intent->side === 'sell' && $intent->positionEffect === 'close') {
@@ -313,7 +338,7 @@ final class OptionRailPipeline
             if ($ask === null || $ask <= 0.0) {
                 return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'ask_unverified');
             }
-            if ($limit + 0.000001 < $ask) {
+            if ($limit + 0.000001 < $ask && ! $this->isBoundedConvexEntry($intent)) {
                 return OptionGateResult::block('marketability', self::BLOCK_PRICE, 'buy_limit_below_live_ask', [
                     'limit_price' => $limit,
                     'ask' => $ask,
@@ -338,6 +363,13 @@ final class OptionRailPipeline
             'bid' => $bid,
             'ask' => $ask,
         ]);
+    }
+
+    private function isBoundedConvexEntry(OptionOrderIntent $intent): bool
+    {
+        return $intent->source === 'theta:convex-probe' && $intent->strategyLabel === 'convex_thesis_probe'
+            && $intent->side === 'buy' && $intent->positionEffect === 'open'
+            && ($intent->metadata['entry_mode'] ?? null) === 'convex_bounded_resting';
     }
 
     private function capsGate(OptionOrderIntent $intent, array $cfg, array $context): OptionGateResult

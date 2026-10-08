@@ -89,7 +89,8 @@ def _clean(rows):
 def evaluate(ticker, spot, dte, call_rows, put_rows, realized_vol=None, catalyst_days=None,
              rr_max=RR_MAX, iv_rv_max=IV_RV_MAX, dispersion_max=DISPERSION_MAX,
              far_spread_bps_max=FAR_SPREAD_BPS_MAX, far_delta=FAR_DELTA, rich_max=0.02,
-             ach_cost_bps_max=ACH_COST_BPS_MAX, min_fill_prob=MIN_FILL_PROB):
+             ach_cost_bps_max=ACH_COST_BPS_MAX, min_fill_prob=MIN_FILL_PROB,
+             repeg_cap_frac=cfs.REPEG_CAP_FRAC):
     # Quote-quality pre-filter FIRST — strip garbage strikes before any signal is computed.
     call_rows, n_call_stripped = _clean(call_rows)
     put_rows, n_put_stripped = _clean(put_rows)
@@ -169,7 +170,8 @@ def evaluate(ticker, spot, dte, call_rows, put_rows, realized_vol=None, catalyst
     far = _nearest(call_rows, "delta", far_delta)
     fill = cfs.simulate(far["bid"], far["ask"],
                         volume=far.get("volume"), open_interest=far.get("open_interest"),
-                        budget_bps=ach_cost_bps_max, min_fill_prob=min_fill_prob) if far else {}
+                        budget_bps=ach_cost_bps_max, min_fill_prob=min_fill_prob,
+                        repeg_cap_frac=repeg_cap_frac) if far else {}
     signals["executable_wing"] = {
         "far_call_strike": float(far["strike"]) if far else None,
         "far_call_delta": round(abs(float(far["delta"])), 4) if far and far.get("delta") not in (None, "") else None,
