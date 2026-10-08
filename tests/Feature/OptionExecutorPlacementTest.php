@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\ConvexProbeRun;
 use App\Models\HarnessOrderRef;
 use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Execution\OrderRefStore;
@@ -204,7 +205,8 @@ class OptionExecutorPlacementTest extends TestCase
             'limitPrice' => 0.44, 'source' => 'theta:convex-probe',
             'underlyingSymbol' => 'XLF', 'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
             'strategyLabel' => 'convex_thesis_probe',
-            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                'thesis_id' => 'convex-fixture', 'spec_hash' => str_repeat('a', 64)],
         ]);
 
         $missing = $this->executor()->execute($intent, $context);
@@ -224,13 +226,33 @@ class OptionExecutorPlacementTest extends TestCase
             fclose($handle);
             $hash = hash('sha256', json_encode(array_combine($columns, $admit), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
             config()->set('harness.convex.matrix_path', $path);
+            ConvexProbeRun::query()->create([
+                'thesis_id' => 'convex-fixture', 'leg_id' => 'probe',
+                'account_number' => (string) config('harness.agentic_account'), 'status' => 'entry_pending',
+                'spec' => ['matrix_source' => ['row_sha256' => $hash],
+                    'legs' => [['fast_exit' => ['hard_stop_pct' => 30.0]]]],
+                'spec_hash' => str_repeat('a', 64), 'underlying_symbol' => 'XLF', 'option_type' => 'call',
+                'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.44,
+                'entry_intent_key' => $intent->intentKey(now()->toDateString()),
+            ]);
             $context['convex_matrix_source'] = ['row_sha256' => 'invalid'];
             $malformed = $this->executor()->execute($intent, $context);
             $this->assertSame('LIVE_RISK_ABORTED', $malformed['classification']);
-            $this->assertContains('matrix_admission:matrix_admit_invalid_before_place', $malformed['verdict']->blockReasons());
+            $this->assertContains('matrix_admission:bounded_convex_run_ownership_unverified', $malformed['verdict']->blockReasons());
             $this->assertSame(0, $this->reviewCalls);
 
             $context['convex_matrix_source'] = ['row_sha256' => $hash];
+            $forged = $this->intent([
+                'limitPrice' => 0.44, 'source' => 'theta:convex-probe', 'underlyingSymbol' => 'XLF',
+                'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
+                'strategyLabel' => 'convex_thesis_probe',
+                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 99.0,
+                    'thesis_id' => 'convex-fixture', 'spec_hash' => str_repeat('a', 64)],
+            ]);
+            $unowned = $this->executor()->execute($forged, $context);
+            $this->assertContains('matrix_admission:bounded_convex_run_ownership_unverified', $unowned['verdict']->blockReasons());
+            $this->assertSame(0, $this->reviewCalls);
+
             $result = $this->executor()->execute($intent, $context);
 
             $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);

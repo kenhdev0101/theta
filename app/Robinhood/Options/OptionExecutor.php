@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Robinhood\Options;
 
+use App\Models\ConvexProbeRun;
 use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Execution\OrderRefStore;
@@ -42,9 +43,10 @@ final class OptionExecutor
             && ($intent->metadata['entry_mode'] ?? null) === 'convex_bounded_resting';
         if ($boundedConvex) {
             $source = $context['convex_matrix_source'] ?? null;
-            $block = is_array($source)
-                ? $this->matrixAdmissionBlocker($intent, $source)
-                : 'matrix_evidence_required_for_bounded_entry';
+            $block = $this->boundedConvexOwnershipBlocker($intent, $source);
+            if ($block === null) {
+                $block = $this->matrixAdmissionBlocker($intent, $source);
+            }
             if ($block !== null) {
                 return $this->abort($intent, new OptionRailVerdict($intent, [
                     OptionGateResult::block('matrix_admission', 'BLOCK_ADMISSION', $block),
@@ -181,6 +183,30 @@ final class OptionExecutor
             ?? null;
 
         return is_string($brokerOrderId) && $brokerOrderId !== '' ? $brokerOrderId : null;
+    }
+
+    /** Matrix evidence is checked before broker review and again immediately before place. */
+    private function boundedConvexOwnershipBlocker(OptionOrderIntent $intent, mixed $source): ?string
+    {
+        if (! is_array($source)) {
+            return 'matrix_evidence_required_for_bounded_entry';
+        }
+        $thesisId = $intent->metadata['thesis_id'] ?? null;
+        $specHash = $intent->metadata['spec_hash'] ?? null;
+        $run = is_string($thesisId) && $thesisId !== ''
+            ? ConvexProbeRun::query()->where('thesis_id', $thesisId)->first()
+            : null;
+        if (! $run instanceof ConvexProbeRun || ! is_string($specHash) || $run->spec_hash !== $specHash
+            || $run->account_number !== (string) ($this->cfg['agentic_account'] ?? '')
+            || $run->status !== 'entry_pending' || $run->option_id !== $intent->optionId
+            || abs((float) $run->entry_limit_price - (float) $intent->limitPrice) > 0.000001
+            || $run->entry_intent_key !== $intent->intentKey(now()->toDateString())
+            || data_get($run->spec, 'matrix_source.row_sha256') !== ($source['row_sha256'] ?? null)
+            || (float) data_get($run->spec, 'legs.0.fast_exit.hard_stop_pct', 0) !== (float) ($intent->metadata['hard_stop_pct'] ?? 0)) {
+            return 'bounded_convex_run_ownership_unverified';
+        }
+
+        return null;
     }
 
     /** Matrix evidence is checked before broker review and again immediately before place. */
