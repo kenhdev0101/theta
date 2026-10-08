@@ -17,7 +17,9 @@ final class ConvexEntryPricing
 
         $mid = ($bid + $ask) / 2;
         $modelCap = floor(($mid + ($ask - $mid) * $repegCapFrac) * 100 + 0.000001) / 100;
-        $lossCap = floor(($bid / (1 - $hardStopPct / 100)) * 100 + 0.000001) / 100;
+        // Leave positive room before the executable bid itself reaches the
+        // hard stop. Equality would open a contract already due for exit.
+        $lossCap = floor(($bid / (1 - $hardStopPct / 100)) * 100 - 0.00000001) / 100;
         $limit = min($modelCap, $lossCap);
         if ($limit < ceil($mid * 100 - 0.000001) / 100) {
             return ['blocker' => 'convex_exit_spread_consumes_thesis_risk'];

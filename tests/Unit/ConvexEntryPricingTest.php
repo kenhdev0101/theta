@@ -24,5 +24,8 @@ final class ConvexEntryPricingTest extends TestCase
         $this->assertSame('convex_exit_spread_consumes_thesis_risk',
             ConvexEntryPricing::quote(0.35, 0.48, 15, 0.5)['blocker']);
         $this->assertFalse(ConvexEntryPricing::limitAllowed(0.35, 0.48, 0.42, 15, 0.5));
+        $this->assertSame('convex_exit_spread_consumes_thesis_risk',
+            ConvexEntryPricing::quote(0.35, 0.65, 30, 0.5)['blocker']);
+        $this->assertFalse(ConvexEntryPricing::limitAllowed(0.35, 0.65, 0.50, 30, 0.5));
     }
 }

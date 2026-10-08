@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Models\ConvexProbeRun;
+use App\Robinhood\Convex\ConvexEntryPricing;
 use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Convex\ConvexProbeLifecycle;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
@@ -112,6 +113,11 @@ final class ConvexProbeLifecycleTest extends TestCase
         $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 1.31, 'mid' => 1.36], $now));
         $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 0.69, 'mid' => 0.74], $now));
         $this->assertTrue(ConvexProbeLifecycle::exitTriggered($run, ['bid' => 0.95], $now->copy()->addMinutes(10)));
+
+        $run->forceFill(['entry_average_price' => 0.50]);
+        $this->assertSame('hard_stop', ConvexProbeLifecycle::exitReason($run, ['bid' => 0.35], $now));
+        $this->assertSame('convex_exit_spread_consumes_thesis_risk',
+            ConvexEntryPricing::quote(0.35, 0.65, 30, 0.5)['blocker']);
     }
 
     public function test_external_expiry_precedes_all_wall_clock_triggers_and_is_idempotent(): void
