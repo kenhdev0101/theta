@@ -32,6 +32,8 @@ class ConvexIngestTest extends TestCase
 
     private float $maxQuotedStrike = 0.0;
 
+    private array $matrixRepegCaps = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -57,6 +59,7 @@ class ConvexIngestTest extends TestCase
 
     public function test_sweep_appends_only_in_band_tenors_capped_with_null_outcomes(): void
     {
+        config()->set('harness.convex.entry_repeg_cap_frac', 0.25);
         $this->fakeBrokerAndGreeks();
 
         $this->artisan('theta:convex-ingest --once')
@@ -102,6 +105,8 @@ class ConvexIngestTest extends TestCase
         // the instrument cursor and actually quote above-spot strikes.
         $this->assertTrue($this->instrumentCursorFollowed, 'service must paginate instruments past page 1');
         $this->assertGreaterThan(660.0, $this->maxQuotedStrike, 'the above-spot call wing must be quoted');
+        $this->assertSame([0.25, 0.25], $this->matrixRepegCaps,
+            'the matrix math must receive the same entry cap as the live order rail');
     }
 
     public function test_schema_drift_row_is_surfaced_not_appended(): void
@@ -190,6 +195,8 @@ class ConvexIngestTest extends TestCase
             if (in_array('csv-header', $args, true)) {
                 return Http::response(['ok' => true, 'script' => $script, 'stdout_json' => null, 'stdout_raw' => implode(',', $this->featureColumns())]);
             }
+
+            $this->matrixRepegCaps[] = (float) $this->argValue($args, '--repeg-cap-frac');
 
             $row = $this->featureRow(
                 (string) $this->argValue($args, '--ticker'),
