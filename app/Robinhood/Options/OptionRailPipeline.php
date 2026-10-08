@@ -263,10 +263,11 @@ final class OptionRailPipeline
             $target = $intent->metadata['profit_target_mult'] ?? null;
             $fraction = data_get($cfg, 'convex.entry_repeg_cap_frac', 0.5);
             $costFraction = data_get($cfg, 'convex.round_trip_cost_budget_fraction', 0.5);
-            if (! is_numeric($bid) || ! is_numeric($ask) || ! is_numeric($stop) || ! is_numeric($fraction)
+            if (! is_numeric($bid) || ! is_numeric($ask) || ! is_numeric($stop) || ! is_numeric($target)
+                || ! is_numeric($fraction) || ! is_numeric($costFraction)
                 || $intent->limitPrice === null
                 || ! ConvexEntryPricing::limitAllowed((float) $bid, (float) $ask, $intent->limitPrice, (float) $stop, (float) $fraction,
-                    is_numeric($target) ? (float) $target : null, is_numeric($target) ? (float) $costFraction : null)) {
+                    (float) $target, (float) $costFraction)) {
                 return OptionGateResult::block('spread', self::BLOCK_WIDE_SPREAD, 'convex_entry_exceeds_exit_risk_or_reprice_cap');
             }
 
@@ -281,7 +282,7 @@ final class OptionRailPipeline
                 'entry_cost_bps' => round(max(0, ($intent->limitPrice - ((float) $bid + (float) $ask) / 2) / $intent->limitPrice * 10000), 2),
                 'exit_cost_bps' => round((((float) $bid + (float) $ask) / 2 - (float) $bid) / $intent->limitPrice * 10000, 2),
                 'round_trip_cost_bps' => round(($intent->limitPrice - (float) $bid) / $intent->limitPrice * 10000, 2),
-                'round_trip_budget_bps' => is_numeric($target) ? round(min((float) $stop, ((float) $target - 1) * 100) * 100 * (float) $costFraction, 2) : null,
+                'round_trip_budget_bps' => round(min((float) $stop, ((float) $target - 1) * 100) * 100 * (float) $costFraction, 2),
                 'immediate_exit_loss_pct' => round(($intent->limitPrice - (float) $bid) / $intent->limitPrice * 100, 2),
                 'hard_stop_pct' => (float) $stop,
             ]);

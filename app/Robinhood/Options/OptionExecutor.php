@@ -224,7 +224,10 @@ final class OptionExecutor
             || $run->entry_intent_key !== $intent->intentKey(now()->toDateString())
             || data_get($run->spec, 'matrix_source.row_sha256') !== ($source['row_sha256'] ?? null)
             || (float) data_get($run->spec, 'legs.0.fast_exit.hard_stop_pct', 0) !== (float) ($intent->metadata['hard_stop_pct'] ?? 0)
-            || (float) data_get($run->spec, 'legs.0.fast_exit.profit_target_mult', 0) !== (float) ($intent->metadata['profit_target_mult'] ?? 0)) {
+            || ! is_numeric(data_get($run->spec, 'legs.0.fast_exit.profit_target_mult'))
+            || (float) data_get($run->spec, 'legs.0.fast_exit.profit_target_mult') <= 1
+            || ! is_numeric($intent->metadata['profit_target_mult'] ?? null)
+            || (float) data_get($run->spec, 'legs.0.fast_exit.profit_target_mult') !== (float) $intent->metadata['profit_target_mult']) {
             return 'bounded_convex_run_ownership_unverified';
         }
 

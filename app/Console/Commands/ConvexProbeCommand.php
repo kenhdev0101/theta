@@ -39,6 +39,9 @@ final class ConvexProbeCommand extends Command
         $cfg = $this->assembleConfig();
         $recorder = JsonlRecorder::fromConfig($cfg);
         $client = RobinhoodMcpClient::fromConfig($cfg, $recorder);
+        if (in_array($action, ['tick', 'exit', 'expire'], true)) {
+            $client->setCreditLane('stewardship');
+        }
         $lifecycle = new ConvexProbeLifecycle($client, $cfg, $recorder);
 
         try {

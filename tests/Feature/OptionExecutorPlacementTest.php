@@ -207,17 +207,17 @@ class OptionExecutorPlacementTest extends TestCase
         $this->fakeMcp();
         $context = $this->greenContext();
         $context['quote'] = [
-            'bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+            'bid' => 0.43, 'ask' => 0.48, 'mid' => 0.455, 'spread_bps' => 1098.90,
             'age_seconds' => 1.0, 'stale' => false, 'updated_at' => now()->toIso8601String(),
         ];
         $intent = $this->intent([
-            'limitPrice' => 0.44, 'source' => 'theta:convex-probe',
+            'limitPrice' => 0.46, 'source' => 'theta:convex-probe',
             'underlyingSymbol' => 'XLF', 'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
             'strategyLabel' => 'convex_thesis_probe',
-            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0, 'profit_target_mult' => 1.30,
                 'thesis_id' => 'convex-fixture', 'spec_hash' => str_repeat('a', 64)],
         ]);
-        $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => '0.35',
+        $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => '0.43',
             'ask_price' => '0.48', 'updated_at' => now()->toIso8601String()];
 
         $missing = $this->executor()->execute($intent, $context);
@@ -241,9 +241,9 @@ class OptionExecutorPlacementTest extends TestCase
                 'thesis_id' => 'convex-fixture', 'leg_id' => 'probe',
                 'account_number' => (string) config('harness.agentic_account'), 'status' => 'entry_pending',
                 'spec' => ['matrix_source' => ['row_sha256' => $hash],
-                    'legs' => [['fast_exit' => ['hard_stop_pct' => 30.0]]]],
+                    'legs' => [['fast_exit' => ['hard_stop_pct' => 30.0, 'profit_target_mult' => 1.30]]]],
                 'spec_hash' => str_repeat('a', 64), 'underlying_symbol' => 'XLF', 'option_type' => 'call',
-                'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.44,
+                'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.46,
                 'entry_intent_key' => $intent->intentKey(now()->toDateString()),
             ]);
             $context['convex_matrix_source'] = ['row_sha256' => 'invalid'];
@@ -254,20 +254,36 @@ class OptionExecutorPlacementTest extends TestCase
 
             $context['convex_matrix_source'] = ['row_sha256' => $hash];
             $forged = $this->intent([
-                'limitPrice' => 0.44, 'source' => 'theta:convex-probe', 'underlyingSymbol' => 'XLF',
+                'limitPrice' => 0.46, 'source' => 'theta:convex-probe', 'underlyingSymbol' => 'XLF',
                 'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
                 'strategyLabel' => 'convex_thesis_probe',
-                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 99.0,
+                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 99.0, 'profit_target_mult' => 1.30,
                     'thesis_id' => 'convex-fixture', 'spec_hash' => str_repeat('a', 64)],
             ]);
             $unowned = $this->executor()->execute($forged, $context);
             $this->assertContains('matrix_admission:bounded_convex_run_ownership_unverified', $unowned['verdict']->blockReasons());
             $this->assertSame(0, $this->reviewCalls);
 
+            $stored = ConvexProbeRun::query()->where('thesis_id', 'convex-fixture')->firstOrFail();
+            $originalSpec = $stored->spec;
+            $missingTargetSpec = $originalSpec;
+            unset($missingTargetSpec['legs'][0]['fast_exit']['profit_target_mult']);
+            $stored->forceFill(['spec' => $missingTargetSpec])->save();
+            $missingTargetIntent = $this->intent([
+                'limitPrice' => 0.46, 'source' => 'theta:convex-probe', 'underlyingSymbol' => 'XLF',
+                'expirationDate' => '2026-12-18', 'strikePrice' => 58.0, 'strategyLabel' => 'convex_thesis_probe',
+                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                    'thesis_id' => 'convex-fixture', 'spec_hash' => str_repeat('a', 64)],
+            ]);
+            $missingTarget = $this->executor()->execute($missingTargetIntent, $context);
+            $this->assertContains('matrix_admission:bounded_convex_run_ownership_unverified', $missingTarget['verdict']->blockReasons());
+            $this->assertSame(0, $this->reviewCalls);
+            $stored->forceFill(['spec' => $originalSpec])->save();
+
             $result = $this->executor()->execute($intent, $context);
 
             $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);
-            $this->assertSame('0.44', $this->placedArguments[0]['price']);
+            $this->assertSame('0.46', $this->placedArguments[0]['price']);
             $this->assertSame('buy', $this->placedArguments[0]['legs'][0]['side']);
             $this->assertSame('open', $this->placedArguments[0]['legs'][0]['position_effect']);
         } finally {
@@ -279,8 +295,8 @@ class OptionExecutorPlacementTest extends TestCase
     {
         return [
             'bid deteriorates' => ['0.20', 'now', 'spread:convex_entry_exceeds_exit_risk_or_reprice_cap'],
-            'timestamp absent' => ['0.35', '', 'quote_freshness:quote_unavailable_before_place'],
-            'timestamp relative' => ['0.35', 'yesterday', 'quote_freshness:quote_unavailable_before_place'],
+            'timestamp absent' => ['0.43', '', 'quote_freshness:quote_unavailable_before_place'],
+            'timestamp relative' => ['0.43', 'yesterday', 'quote_freshness:quote_unavailable_before_place'],
         ];
     }
 
@@ -302,26 +318,26 @@ class OptionExecutorPlacementTest extends TestCase
             $hash = hash('sha256', json_encode(array_combine($columns, $admit), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
             config()->set('harness.convex.matrix_path', $path);
             $intent = $this->intent([
-                'limitPrice' => 0.44, 'source' => 'theta:convex-probe',
+                'limitPrice' => 0.46, 'source' => 'theta:convex-probe',
                 'underlyingSymbol' => 'XLF', 'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
                 'strategyLabel' => 'convex_thesis_probe',
-                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0, 'profit_target_mult' => 1.30,
                     'thesis_id' => 'convex-deteriorated', 'spec_hash' => str_repeat('b', 64)],
             ]);
             ConvexProbeRun::query()->create([
                 'thesis_id' => 'convex-deteriorated', 'leg_id' => 'probe',
                 'account_number' => (string) config('harness.agentic_account'), 'status' => 'entry_pending',
                 'spec' => ['matrix_source' => ['row_sha256' => $hash],
-                    'legs' => [['fast_exit' => ['hard_stop_pct' => 30.0]]]],
+                    'legs' => [['fast_exit' => ['hard_stop_pct' => 30.0, 'profit_target_mult' => 1.30]]]],
                 'spec_hash' => str_repeat('b', 64), 'underlying_symbol' => 'XLF', 'option_type' => 'call',
-                'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.44,
+                'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.46,
                 'entry_intent_key' => $intent->intentKey(now()->toDateString()),
             ]);
             $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => $bid,
                 'ask_price' => '0.48', 'updated_at' => $stamp === 'now' ? now()->toIso8601String() : $stamp];
             $this->fakeMcp();
             $context = $this->greenContext();
-            $context['quote'] = ['bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+            $context['quote'] = ['bid' => 0.43, 'ask' => 0.48, 'mid' => 0.455, 'spread_bps' => 1098.90,
                 'age_seconds' => 1.0, 'stale' => false, 'updated_at' => now()->toIso8601String()];
             $context['convex_matrix_source'] = ['row_sha256' => $hash];
 

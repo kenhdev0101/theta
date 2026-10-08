@@ -220,27 +220,30 @@ class OptionRailPipelineTest extends TestCase
     public function test_convex_resting_entry_uses_thesis_exit_risk_instead_of_fixed_spread_cap(): void
     {
         $intent = $this->intent([
-            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.44,
-            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.46,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                'profit_target_mult' => 1.30],
         ]);
-        $quote = ['bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
+        $quote = ['bid' => 0.43, 'ask' => 0.48, 'mid' => 0.455, 'spread_bps' => 1098.90,
             'age_seconds' => 1.0, 'stale' => false];
         $verdict = $this->evaluate($intent, ['options' => ['max_spread_bps' => 500],
             'convex' => ['entry_repeg_cap_frac' => 0.5]], ['quote' => $quote]);
 
         $this->assertSame(OptionRailVerdict::ALLOW, $verdict->verdict(), implode(', ', $verdict->blockReasons()));
         $spread = collect($verdict->toArray()['ledger'])->firstWhere('gate', 'spread');
-        $this->assertSame(20.45, $spread['detail']['immediate_exit_loss_pct']);
+        $this->assertSame(6.52, $spread['detail']['immediate_exit_loss_pct']);
 
         $crossing = $this->evaluate($this->intent([
             'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.48,
-            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0,
+                'profit_target_mult' => 1.30],
         ]), ['options' => ['max_spread_bps' => 500]], ['quote' => $quote]);
         $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $crossing->blockReasons());
 
         $smallRisk = $this->evaluate($this->intent([
-            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.42,
-            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 15.0],
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.46,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 5.0,
+                'profit_target_mult' => 1.30],
         ]), ['options' => ['max_spread_bps' => 500]], ['quote' => $quote]);
         $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $smallRisk->blockReasons());
     }
@@ -257,6 +260,14 @@ class OptionRailPipelineTest extends TestCase
         $verdict = $this->evaluate($intent, ['convex' => ['entry_repeg_cap_frac' => 0.5,
             'round_trip_cost_budget_fraction' => 0.5]], ['quote' => $quote]);
         $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $verdict->blockReasons());
+
+        $missingTarget = $this->intent([
+            'source' => 'theta:convex-probe', 'strategyLabel' => 'convex_thesis_probe', 'limitPrice' => 0.44,
+            'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
+        ]);
+        $missing = $this->evaluate($missingTarget, ['convex' => ['entry_repeg_cap_frac' => 0.5,
+            'round_trip_cost_budget_fraction' => 0.5]], ['quote' => $quote]);
+        $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $missing->blockReasons());
 
         $quote['bid'] = 0.43;
         $quote['ask'] = 0.48;

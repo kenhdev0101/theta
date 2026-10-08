@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Robinhood\Mcp\BrokerCreditLimiter;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 use Tests\TestCase;
@@ -65,8 +66,22 @@ class BrokerCreditLimiterTest extends TestCase
         } catch (RuntimeException $e) {
             $this->assertStringContainsString('lane=standard ceiling=2', $e->getMessage());
         }
+        $this->assertSame(2, Cache::store('array')->get('test:broker:reserved:'.now()->format('YmdHi')));
         $limiter->acquire('position-exit', lane: 'stewardship');
         $this->expectException(RuntimeException::class);
         $limiter->acquire('another-exit', lane: 'stewardship');
+    }
+
+    public function test_failed_cache_increment_never_grants_a_broker_credit(): void
+    {
+        $cache = $this->createMock(CacheRepository::class);
+        $cache->method('add')->willReturn(true);
+        $cache->method('get')->willReturn(0);
+        $cache->method('increment')->willReturn(false);
+        $limiter = new BrokerCreditLimiter(true, 3, 'test:broker:failed-increment', 'fail', 0, $cache);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('broker credit reservation failed');
+        $limiter->acquire('buy');
     }
 }

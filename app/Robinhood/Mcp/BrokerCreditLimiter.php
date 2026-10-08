@@ -67,20 +67,37 @@ final class BrokerCreditLimiter
 
         do {
             $windowKey = $this->cacheKey.':'.now()->format('YmdHi');
-            $cache->add($windowKey, 0, now()->addSeconds(70));
-            // Reserve with one atomic increment across all workers. A failed
-            // reservation is rolled back before waiting; it never sends HTTP.
-            $used = (int) $cache->increment($windowKey, $credits);
-            if ($used <= $ceiling) {
-                return;
+            $used = null;
+            // A shared lock makes the check and increment one admission
+            // decision. A denied standard call never occupies the reserve,
+            // even briefly, and a crashed worker cannot leak a rollback.
+            $lock = Cache::lock($this->cacheKey.':reservation-lock', 30);
+            if ($lock->get()) {
+                try {
+                    $cache->add($windowKey, 0, now()->addSeconds(70));
+                    $rawUsed = $cache->get($windowKey);
+                    if (! is_numeric($rawUsed) || (int) $rawUsed < 0) {
+                        throw new RuntimeException('broker credit ledger unavailable before '.$operation);
+                    }
+                    $used = (int) $rawUsed;
+                    if ($used + $credits <= $ceiling) {
+                        $reserved = $cache->increment($windowKey, $credits);
+                        if (! is_numeric($reserved) || (int) $reserved !== $used + $credits) {
+                            throw new RuntimeException('broker credit reservation failed for '.$operation);
+                        }
+
+                        return;
+                    }
+                } finally {
+                    $lock->release();
+                }
             }
-            $cache->decrement($windowKey, $credits);
 
             if ($mode === 'fail' || microtime(true) >= $deadline) {
                 throw new RuntimeException(sprintf(
-                    'broker credits exhausted for %s: used=%d requested=%d max_per_minute=%d lane=%s ceiling=%d mode=%s',
+                    'broker credits exhausted for %s: used=%s requested=%d max_per_minute=%d lane=%s ceiling=%d mode=%s',
                     $operation,
-                    $used - $credits,
+                    $used === null ? 'lock_unavailable' : (string) $used,
                     $credits,
                     $this->maxPerMinute,
                     $lane,
