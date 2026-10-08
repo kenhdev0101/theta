@@ -11,6 +11,7 @@ use App\Robinhood\Execution\OrderRefStore;
 use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
+use DateTimeImmutable;
 use Illuminate\Support\Carbon;
 use RuntimeException;
 
@@ -222,7 +223,20 @@ final class OptionExecutor
             if ($bid <= 0 || $ask < $bid) {
                 continue;
             }
-            $age = abs(Carbon::parse($quote['updated_at'])->diffInSeconds(now()));
+            $stamp = $quote['updated_at'];
+            if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/', $stamp) !== 1) {
+                continue;
+            }
+            try {
+                $parsed = new DateTimeImmutable($stamp);
+                $errors = DateTimeImmutable::getLastErrors();
+                if ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
+                    continue;
+                }
+                $age = abs(Carbon::instance($parsed)->diffInSeconds(now()));
+            } catch (\Throwable) {
+                continue;
+            }
             $mid = ($bid + $ask) / 2;
 
             return [

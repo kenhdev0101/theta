@@ -18,6 +18,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Assert;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -274,7 +275,17 @@ class OptionExecutorPlacementTest extends TestCase
         }
     }
 
-    public function test_convex_entry_aborts_if_live_bid_deteriorates_during_broker_review(): void
+    public static function unsafeConvexRefreshQuotes(): array
+    {
+        return [
+            'bid deteriorates' => ['0.20', 'now', 'spread:convex_entry_exceeds_exit_risk_or_reprice_cap'],
+            'timestamp absent' => ['0.35', '', 'quote_freshness:quote_unavailable_before_place'],
+            'timestamp relative' => ['0.35', 'yesterday', 'quote_freshness:quote_unavailable_before_place'],
+        ];
+    }
+
+    #[DataProvider('unsafeConvexRefreshQuotes')]
+    public function test_convex_entry_aborts_if_refreshed_quote_is_unverifiable_or_risky(string $bid, string $stamp, string $reason): void
     {
         $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
         config()->set('harness.options.max_spread_bps', 500);
@@ -306,8 +317,8 @@ class OptionExecutorPlacementTest extends TestCase
                 'option_id' => 'opt-uuid-1', 'entry_limit_price' => 0.44,
                 'entry_intent_key' => $intent->intentKey(now()->toDateString()),
             ]);
-            $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => '0.20',
-                'ask_price' => '0.48', 'updated_at' => now()->toIso8601String()];
+            $this->liveOptionQuote = ['instrument_id' => 'opt-uuid-1', 'bid_price' => $bid,
+                'ask_price' => '0.48', 'updated_at' => $stamp === 'now' ? now()->toIso8601String() : $stamp];
             $this->fakeMcp();
             $context = $this->greenContext();
             $context['quote'] = ['bid' => 0.35, 'ask' => 0.48, 'mid' => 0.415, 'spread_bps' => 3132.53,
@@ -317,7 +328,7 @@ class OptionExecutorPlacementTest extends TestCase
             $result = $this->executor()->execute($intent, $context);
 
             $this->assertSame('LIVE_RISK_ABORTED', $result['classification']);
-            $this->assertContains('spread:convex_entry_exceeds_exit_risk_or_reprice_cap', $result['verdict']->blockReasons());
+            $this->assertContains($reason, $result['verdict']->blockReasons());
             $this->assertSame(1, $this->reviewCalls);
             $this->assertSame([], $this->placedArguments);
         } finally {
