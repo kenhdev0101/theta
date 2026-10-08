@@ -235,6 +235,151 @@ final class ConvexProbeLifecycleTest extends TestCase
         $this->assertSame('entry_cancel_requested_await_broker_confirmation', $result->block_reason);
     }
 
+    public function test_resting_bid_is_rechecked_cancelled_and_retried_until_broker_confirms_no_fill(): void
+    {
+        $now = Carbon::parse('2026-10-08T18:00:00Z');
+        $this->travelTo($now);
+        $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
+        $this->assertIsString($path);
+        try {
+            $hash = $this->writeRestingMatrix($path);
+            $quote = ['bid_price' => '0.35', 'ask_price' => '0.48'];
+            $state = 'open';
+            $cancels = 0;
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $client->method('getOptionOrders')->willReturnCallback(static function () use (&$state): array {
+                return ['data' => ['orders' => [[
+                    'id' => 'entry-1', 'state' => $state, 'processed_quantity' => '0.0000',
+                    'legs' => [['option_id' => 'option-1', 'side' => 'buy', 'position_effect' => 'open']],
+                ]]]];
+            });
+            $client->method('getOptionPositions')->willReturn(['data' => ['positions' => []]]);
+            $client->method('getOptionQuotes')->willReturnCallback(static function () use (&$quote): array {
+                return ['data' => ['results' => [['quote' => [
+                    'instrument_id' => 'option-1', ...$quote, 'updated_at' => now()->toIso8601String(),
+                ]]]]];
+            });
+            $client->method('cancelOptionOrder')->willReturnCallback(static function (string $id) use (&$cancels): array {
+                self::assertSame('entry-1', $id);
+                $cancels++;
+
+                return [];
+            });
+            $service = new ConvexProbeLifecycle($client, $this->restingConfig($path), new JsonlRecorder(sys_get_temp_dir()));
+            $run = $this->restingRun($hash, $now);
+
+            $this->assertSame('entry_pending', $service->tick($run)->status);
+            $this->assertSame(0, $cancels);
+            $quote['bid_price'] = '0.25';
+            $this->travelTo($now->copy()->addSeconds(10));
+            $run = $service->tick($run);
+            $this->assertSame('resting_bid_outside_thesis_risk', $run->entry_cancel_reason);
+            $this->assertSame(1, $cancels);
+            $this->travelTo($now->copy()->addSeconds(20));
+            $service->tick($run);
+            $this->assertSame(1, $cancels);
+            $this->travelTo($now->copy()->addSeconds(41));
+            $state = 'pending_cancel';
+            $service->tick($run);
+            $this->assertSame(2, $cancels);
+            $state = 'cancelled';
+            $closed = $service->tick($run);
+            $this->assertSame('closed', $closed->status);
+            $this->assertSame('entry_not_filled:resting_bid_outside_thesis_risk', $closed->block_reason);
+            $this->assertSame(2, $cancels);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function test_nonstructural_matrix_reject_cancels_resting_entry_without_expiring_owned_thesis(): void
+    {
+        $now = Carbon::parse('2026-10-08T18:00:00Z');
+        $this->travelTo($now);
+        $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
+        $this->assertIsString($path);
+        try {
+            $hash = $this->writeRestingMatrix($path);
+            $this->writeRestingMatrix($path, 'REJECT', 'executable_wing');
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $client->method('getOptionOrders')->willReturn(['data' => ['orders' => [[
+                'id' => 'entry-1', 'state' => 'open', 'processed_quantity' => '0.0000',
+                'legs' => [['option_id' => 'option-1', 'side' => 'buy', 'position_effect' => 'open']],
+            ]]]]);
+            $client->method('getOptionPositions')->willReturn(['data' => ['positions' => []]]);
+            $client->expects($this->never())->method('getOptionQuotes');
+            $client->expects($this->once())->method('cancelOptionOrder')->with('entry-1');
+            $service = new ConvexProbeLifecycle($client, $this->restingConfig($path), new JsonlRecorder(sys_get_temp_dir()));
+            $run = $this->restingRun($hash, $now);
+
+            $updated = $service->tick($run);
+            $this->assertSame('resting_matrix_admit_superseded', $updated->entry_cancel_reason);
+            $this->assertNull($updated->thesis_expired_at);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function test_stale_exact_quote_cancels_resting_entry(): void
+    {
+        $now = Carbon::parse('2026-10-08T18:00:00Z');
+        $this->travelTo($now);
+        $path = tempnam(sys_get_temp_dir(), 'convex-matrix-');
+        $this->assertIsString($path);
+        try {
+            $hash = $this->writeRestingMatrix($path);
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $client->method('getOptionOrders')->willReturn(['data' => ['orders' => [[
+                'id' => 'entry-1', 'state' => 'open', 'processed_quantity' => '0.0000',
+                'legs' => [['option_id' => 'option-1', 'side' => 'buy', 'position_effect' => 'open']],
+            ]]]]);
+            $client->method('getOptionPositions')->willReturn(['data' => ['positions' => []]]);
+            $client->method('getOptionQuotes')->willReturn(['data' => ['results' => [['quote' => [
+                'instrument_id' => 'option-1', 'bid_price' => '0.35', 'ask_price' => '0.48',
+                'updated_at' => '2026-10-08T17:57:00Z',
+            ]]]]]);
+            $client->expects($this->once())->method('cancelOptionOrder')->with('entry-1');
+            $service = new ConvexProbeLifecycle($client, $this->restingConfig($path), new JsonlRecorder(sys_get_temp_dir()));
+
+            $updated = $service->tick($this->restingRun($hash, $now));
+            $this->assertSame('resting_quote_stale', $updated->entry_cancel_reason);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function test_fill_during_cancel_remains_owned_and_enters_exit_supervision(): void
+    {
+        $now = Carbon::parse('2026-10-08T18:00:00Z');
+        $this->travelTo($now);
+        $client = $this->createMock(RobinhoodMcpClient::class);
+        $client->method('getOptionOrders')->willReturn(['data' => ['orders' => [[
+            'id' => 'entry-1', 'state' => 'filled', 'processed_quantity' => '1.0000',
+            'legs' => [['option_id' => 'option-1', 'side' => 'buy', 'position_effect' => 'open',
+                'executions' => [['price' => '0.44', 'quantity' => '1.0000', 'timestamp' => '2026-10-08T17:59:55Z']]]],
+        ]]]]);
+        $client->method('getOptionPositions')->willReturn(['data' => ['positions' => [[
+            'option_id' => 'option-1', 'quantity' => '1.0000',
+        ]]]]);
+        $client->method('getOptionInstruments')->willReturn(['data' => ['instruments' => []]]);
+        $client->expects($this->never())->method('cancelOptionOrder');
+        $client->expects($this->never())->method('placeOptionOrder');
+        $service = new ConvexProbeLifecycle($client, ['agentic_account' => '872449178'], new JsonlRecorder(sys_get_temp_dir()));
+        $run = $service->stage($this->spec());
+        $run->forceFill([
+            'status' => 'entry_pending', 'option_id' => 'option-1', 'entry_order_id' => 'entry-1',
+            'expiration_date' => '2026-10-16', 'strike_price' => 290,
+            'entry_cancel_requested_at' => $now->copy()->subSeconds(5),
+            'entry_cancel_reason' => 'resting_bid_outside_thesis_risk',
+        ])->save();
+
+        $updated = $service->tick($run);
+        $this->assertSame('held', $updated->status);
+        $this->assertSame(1.0, (float) $updated->entry_filled_qty);
+        $this->assertSame('fresh_exit_bid_unavailable', $updated->block_reason);
+        $this->assertNull($updated->closed_at);
+    }
+
     public function test_expiry_cancels_resting_exit_without_waiting_two_minutes(): void
     {
         $now = Carbon::parse('2026-10-07T18:00:00Z');
@@ -596,6 +741,45 @@ final class ConvexProbeLifecycleTest extends TestCase
         $this->assertSame('ambiguous', $updated->status);
         $this->assertSame('exit_contract_id_conflicts_with_owned_option', $updated->block_reason);
         $this->assertNull($updated->exit_intent_key);
+    }
+
+    private function writeRestingMatrix(string $path, string $verdict = 'ADMIT', string $failure = ''): string
+    {
+        $row = [
+            'ticker' => 'IWM', 'dte' => '8', 'snapshot_ts' => '2026-10-08T17:59:00Z',
+            'verdict' => $verdict, 'failed_signals' => $failure, 'pending_signals' => '',
+            'far_delta' => '0.20', 'bucket' => 'index', 'far_strike' => '290', 'spot' => '250',
+        ];
+        $handle = fopen($path, 'w');
+        $this->assertIsResource($handle);
+        fputcsv($handle, array_keys($row));
+        fputcsv($handle, array_values($row));
+        fclose($handle);
+
+        return hash('sha256', json_encode($row, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function restingConfig(string $path): array
+    {
+        return [
+            'agentic_account' => '872449178',
+            'convex' => ['matrix_path' => $path, 'min_quote_fresh_seconds' => 60,
+                'entry_repeg_cap_frac' => 0.5, 'entry_cancel_retry_seconds' => 30],
+        ];
+    }
+
+    private function restingRun(string $hash, Carbon $now): ConvexProbeRun
+    {
+        $spec = $this->spec()->toArray();
+        $spec['matrix_source'] = ['row_sha256' => $hash];
+
+        return ConvexProbeRun::query()->create([
+            'thesis_id' => 'convex-resting-test', 'leg_id' => 'probe', 'account_number' => '872449178',
+            'status' => 'entry_pending', 'underlying_symbol' => 'IWM', 'option_type' => 'call',
+            'spec' => $spec, 'spec_hash' => hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)),
+            'option_id' => 'option-1', 'entry_order_id' => 'entry-1', 'entry_limit_price' => 0.44,
+            'expiration_date' => '2026-10-16', 'entry_submitted_at' => $now->copy()->subSeconds(5),
+        ]);
     }
 
     private function spec(): ThesisSpec

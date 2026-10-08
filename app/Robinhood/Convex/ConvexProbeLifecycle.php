@@ -295,10 +295,28 @@ final class ConvexProbeLifecycle
             $run->forceFill(['entry_filled_qty' => $entryQty, 'entry_average_price' => $this->averagePrice($entry)])->save();
             $entryState = strtolower((string) ($entry['state'] ?? ''));
             if (in_array($entryState, self::OPEN_STATES, true)) {
-                if (($run->thesis_expired_at !== null
-                    || ($run->entry_submitted_at !== null && $run->entry_submitted_at->diffInMinutes(now()) >= 3))
-                    && $run->block_reason !== 'entry_cancel_requested_await_broker_confirmation') {
-                    $this->client->cancelOptionOrder((string) $run->entry_order_id);
+                $reason = $run->entry_cancel_reason;
+                if ($reason === null && $run->thesis_expired_at !== null) {
+                    $reason = 'thesis_expired';
+                }
+                if ($reason === null && $entryQty < 1.0 && isset($run->spec['matrix_source'])) {
+                    $reason = $this->restingEntryBlocker($run);
+                }
+                if ($reason === null && $run->entry_submitted_at !== null
+                    && $run->entry_submitted_at->diffInSeconds(now()) >= (int) data_get($this->cfg, 'convex.entry_rest_max_seconds', 180)) {
+                    $reason = 'entry_rest_timeout';
+                }
+                if ($reason !== null) {
+                    $retrySeconds = max(1, (int) data_get($this->cfg, 'convex.entry_cancel_retry_seconds', 30));
+                    if ($run->entry_cancel_requested_at === null
+                        || $run->entry_cancel_requested_at->diffInSeconds(now()) >= $retrySeconds) {
+                        // Persist intent before the broker call. A crash or an
+                        // uncertain response retries cancellation of this same
+                        // order ID; neither case releases the wallet or position.
+                        $run->forceFill(['entry_cancel_requested_at' => now(), 'entry_cancel_reason' => $reason])->save();
+                        $this->client->cancelOptionOrder((string) $run->entry_order_id);
+                        $this->record($run, 'entry_cancel_requested');
+                    }
 
                     return $this->mark($run, 'entry_pending', 'entry_cancel_requested_await_broker_confirmation');
                 }
@@ -310,7 +328,9 @@ final class ConvexProbeLifecycle
                     if ($this->matchingPositionQuantity($positions, (string) $run->option_id) !== 0.0) {
                         return $this->mark($run, 'ambiguous', 'cancelled_unfilled_entry_has_broker_position');
                     }
-                    $run->forceFill(['status' => 'closed', 'closed_at' => now(), 'block_reason' => 'entry_not_filled'])->save();
+                    $run->forceFill(['status' => 'closed', 'closed_at' => now(),
+                        'block_reason' => $run->entry_cancel_reason === null
+                            ? 'entry_not_filled' : 'entry_not_filled:'.$run->entry_cancel_reason])->save();
                     $this->record($run, 'entry_terminal_without_fill');
 
                     return $run->refresh();
@@ -526,6 +546,46 @@ final class ConvexProbeLifecycle
         return $cfg;
     }
 
+    /** Review a still-resting matrix-backed buy against its immutable thesis. */
+    private function restingEntryBlocker(ConvexProbeRun $run): ?string
+    {
+        try {
+            $dte = (int) Carbon::now('America/New_York')->startOfDay()->diffInDays(
+                Carbon::parse($run->expiration_date->toDateString(), 'America/New_York')->startOfDay(), false,
+            );
+            $block = ConvexMatrixAdmission::currentBlocker(
+                (array) $run->spec['matrix_source'], (string) $run->underlying_symbol, $dte,
+                (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')),
+            );
+            if ($block !== null) {
+                return 'resting_matrix_admit_superseded';
+            }
+        } catch (\Throwable) {
+            return 'resting_matrix_unavailable';
+        }
+
+        try {
+            $quote = (new ConvexQuoteReader($this->client, $this->probeConfig()))->forOptionId((string) $run->option_id);
+        } catch (\Throwable) {
+            return 'resting_quote_unavailable';
+        }
+        if ($quote === null) {
+            return 'resting_quote_unavailable';
+        }
+        if ($quote['stale']) {
+            return 'resting_quote_stale';
+        }
+        if ($run->entry_limit_price === null || ! ConvexEntryPricing::limitAllowed(
+            (float) $quote['bid'], (float) $quote['ask'], (float) $run->entry_limit_price,
+            (float) $this->leg($run)->fastExitHardStopPct(),
+            (float) data_get($this->cfg, 'convex.entry_repeg_cap_frac', 0.5),
+        )) {
+            return 'resting_bid_outside_thesis_risk';
+        }
+
+        return null;
+    }
+
     private function leg(ConvexProbeRun $run): ThesisSpecLeg
     {
         $leg = ThesisSpec::fromArray((array) $run->spec)->legs()[0] ?? null;
@@ -664,6 +724,8 @@ final class ConvexProbeLifecycle
             'thesis_expiry_event_id' => $run->thesis_expiry_event_id,
             'thesis_expiry_source' => $run->thesis_expiry_source,
             'thesis_expiry_reason' => $run->thesis_expiry_reason,
+            'entry_cancel_reason' => $run->entry_cancel_reason,
+            'entry_cancel_requested_at' => $run->entry_cancel_requested_at?->toIso8601String(),
             'matrix_source' => data_get($run->spec, 'matrix_source'),
         ]);
     }

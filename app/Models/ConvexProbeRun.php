@@ -28,6 +28,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $entry_order_id
  * @property Carbon|null $entry_submitted_at
  * @property string|null $entry_limit_price
+ * @property Carbon|null $entry_cancel_requested_at
+ * @property string|null $entry_cancel_reason
  * @property string $entry_filled_qty
  * @property string|null $entry_average_price
  * @property string|null $exit_intent_key
@@ -68,6 +70,7 @@ final class ConvexProbeRun extends Model
         'thesis_id', 'leg_id', 'account_number', 'status', 'spec', 'spec_hash',
         'option_id', 'chain_id', 'underlying_symbol', 'option_type', 'expiration_date', 'strike_price',
         'entry_intent_key', 'entry_client_ref_id', 'entry_order_id', 'entry_submitted_at', 'entry_limit_price',
+        'entry_cancel_requested_at', 'entry_cancel_reason',
         'entry_filled_qty', 'entry_average_price', 'exit_intent_key', 'exit_client_ref_id',
         'exit_order_id', 'exit_attempt', 'exit_submitted_at', 'exit_filled_qty', 'exit_average_price', 'opened_at', 'exit_due_at',
         'closed_at', 'last_reconciled_at', 'block_reason',
@@ -87,6 +90,7 @@ final class ConvexProbeRun extends Model
             'exit_average_price' => 'decimal:4',
             'opened_at' => 'datetime',
             'entry_submitted_at' => 'datetime',
+            'entry_cancel_requested_at' => 'datetime',
             'exit_due_at' => 'datetime',
             'exit_attempt' => 'integer',
             'exit_submitted_at' => 'datetime',

@@ -87,6 +87,8 @@ return [
         'auto_hard_stop_pct' => (float) env('HARNESS_CONVEX_AUTO_HARD_STOP_PCT', 30),
         // Shared by matrix fill math and the live resting entry cap.
         'entry_repeg_cap_frac' => (float) env('HARNESS_CONVEX_ENTRY_REPEG_CAP_FRAC', 0.5),
+        'entry_rest_max_seconds' => (int) env('HARNESS_CONVEX_ENTRY_REST_MAX_SECONDS', 180),
+        'entry_cancel_retry_seconds' => (int) env('HARNESS_CONVEX_ENTRY_CANCEL_RETRY_SECONDS', 30),
         // Scheduler arm baked into config (not the box .env) so the read-only
         // sweep runs 9:30-16:00 ET without an env edit. HARNESS_CONVEX_INGEST_ENABLED
         // stays an override kill-switch: set it false in the box .env to disarm.
