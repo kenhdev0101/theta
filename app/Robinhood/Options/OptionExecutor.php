@@ -38,6 +38,20 @@ final class OptionExecutor
             throw new RuntimeException('executor requires a resolver-stamped option_id — symbolic intents resolve before execution');
         }
 
+        $boundedConvex = $intent->source === 'theta:convex-probe' && $intent->isOpening()
+            && ($intent->metadata['entry_mode'] ?? null) === 'convex_bounded_resting';
+        if ($boundedConvex) {
+            $source = $context['convex_matrix_source'] ?? null;
+            $block = is_array($source)
+                ? $this->matrixAdmissionBlocker($intent, $source)
+                : 'matrix_evidence_required_for_bounded_entry';
+            if ($block !== null) {
+                return $this->abort($intent, new OptionRailVerdict($intent, [
+                    OptionGateResult::block('matrix_admission', 'BLOCK_ADMISSION', $block),
+                ]), refRow: null, journalId: $this->contextJournalId($context));
+            }
+        }
+
         // Phase 1 — everything except review. A capability/permission/cap
         // block must not generate broker review traffic.
         $preVerdict = $this->rails->evaluate($intent, $this->cfg, array_merge($context, [
@@ -98,17 +112,7 @@ final class OptionExecutor
         // the placement boundary so a newer REJECT cannot open a stale thesis.
         $matrixSource = $context['convex_matrix_source'] ?? null;
         if ($intent->source === 'theta:convex-probe' && $intent->isOpening() && is_array($matrixSource)) {
-            try {
-                $dte = (int) Carbon::now('America/New_York')->startOfDay()->diffInDays(
-                    Carbon::parse($intent->expirationDate, 'America/New_York')->startOfDay(), false,
-                );
-                $block = ConvexMatrixAdmission::currentBlocker(
-                    $matrixSource, $intent->underlyingSymbol, $dte,
-                    (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')),
-                );
-            } catch (\Throwable) {
-                $block = 'matrix_unavailable_before_place';
-            }
+            $block = $this->matrixAdmissionBlocker($intent, $matrixSource);
             if ($block !== null) {
                 $verdict = new OptionRailVerdict($intent, [
                     ...$verdict->results,
@@ -177,6 +181,23 @@ final class OptionExecutor
             ?? null;
 
         return is_string($brokerOrderId) && $brokerOrderId !== '' ? $brokerOrderId : null;
+    }
+
+    /** Matrix evidence is checked before broker review and again immediately before place. */
+    private function matrixAdmissionBlocker(OptionOrderIntent $intent, array $matrixSource): ?string
+    {
+        try {
+            $dte = (int) Carbon::now('America/New_York')->startOfDay()->diffInDays(
+                Carbon::parse($intent->expirationDate, 'America/New_York')->startOfDay(), false,
+            );
+
+            return ConvexMatrixAdmission::currentBlocker(
+                $matrixSource, $intent->underlyingSymbol, $dte,
+                (string) data_get($this->cfg, 'convex.matrix_path', storage_path('harness/convex_feature_matrix.csv')),
+            );
+        } catch (\Throwable) {
+            return 'matrix_unavailable_before_place';
+        }
     }
 
     /** Wire payload pinned to the live-measured place_option_order schema. */

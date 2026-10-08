@@ -191,6 +191,7 @@ class OptionExecutorPlacementTest extends TestCase
 
     public function test_convex_resting_entry_preserves_bounded_limit_through_review_and_place(): void
     {
+        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
         config()->set('harness.options.max_spread_bps', 500);
         config()->set('harness.convex.entry_repeg_cap_frac', 0.5);
         $this->fakeMcp();
@@ -201,16 +202,44 @@ class OptionExecutorPlacementTest extends TestCase
         ];
         $intent = $this->intent([
             'limitPrice' => 0.44, 'source' => 'theta:convex-probe',
+            'underlyingSymbol' => 'XLF', 'expirationDate' => '2026-12-18', 'strikePrice' => 58.0,
             'strategyLabel' => 'convex_thesis_probe',
             'metadata' => ['entry_mode' => 'convex_bounded_resting', 'hard_stop_pct' => 30.0],
         ]);
 
-        $result = $this->executor()->execute($intent, $context);
+        $missing = $this->executor()->execute($intent, $context);
+        $this->assertSame('LIVE_RISK_ABORTED', $missing['classification']);
+        $this->assertContains('matrix_admission:matrix_evidence_required_for_bounded_entry', $missing['verdict']->blockReasons());
+        $this->assertSame(0, $this->reviewCalls);
+        $this->assertSame([], $this->placedArguments);
 
-        $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);
-        $this->assertSame('0.44', $this->placedArguments[0]['price']);
-        $this->assertSame('buy', $this->placedArguments[0]['legs'][0]['side']);
-        $this->assertSame('open', $this->placedArguments[0]['legs'][0]['position_effect']);
+        $path = tempnam(sys_get_temp_dir(), 'convex-place-');
+        $this->assertIsString($path);
+        try {
+            $columns = ['ticker', 'dte', 'snapshot_ts', 'verdict', 'failed_signals', 'pending_signals', 'far_delta'];
+            $admit = ['XLF', '72', '2026-10-07T18:00:00Z', 'ADMIT', '', '', '0.20'];
+            $handle = fopen($path, 'w');
+            fputcsv($handle, $columns);
+            fputcsv($handle, $admit);
+            fclose($handle);
+            $hash = hash('sha256', json_encode(array_combine($columns, $admit), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            config()->set('harness.convex.matrix_path', $path);
+            $context['convex_matrix_source'] = ['row_sha256' => 'invalid'];
+            $malformed = $this->executor()->execute($intent, $context);
+            $this->assertSame('LIVE_RISK_ABORTED', $malformed['classification']);
+            $this->assertContains('matrix_admission:matrix_admit_invalid_before_place', $malformed['verdict']->blockReasons());
+            $this->assertSame(0, $this->reviewCalls);
+
+            $context['convex_matrix_source'] = ['row_sha256' => $hash];
+            $result = $this->executor()->execute($intent, $context);
+
+            $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);
+            $this->assertSame('0.44', $this->placedArguments[0]['price']);
+            $this->assertSame('buy', $this->placedArguments[0]['legs'][0]['side']);
+            $this->assertSame('open', $this->placedArguments[0]['legs'][0]['position_effect']);
+        } finally {
+            unlink($path);
+        }
     }
 
     public function test_new_matrix_reject_during_review_blocks_convex_placement(): void
