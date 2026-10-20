@@ -183,6 +183,7 @@
             <span class="acct" id="acct">—</span>
         </div>
         <div class="head-right">
+            <a class="ctl" href="{{ route('cockpit.convex') }}">Convex desk</a>
             <span id="updated">connecting…</span>
             <span class="live-dot"><span class="dot" id="conn"></span><span id="conn-label">—</span></span>
             <button class="ctl" id="pause">⏸ Pause</button>
