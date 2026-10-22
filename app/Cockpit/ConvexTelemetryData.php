@@ -345,9 +345,8 @@ final class ConvexTelemetryData
     {
         $known = array_column($runs, 'symbol', 'thesis_id');
         $labels = [
-            'entry_broker_credit_throttled_retry_later' => 'API budget reached; entry deferred for retry',
-            'exit_broker_credit_throttled_retry_later' => 'API budget reached; exit deferred for retry',
-            'manual_recovery_no_broker_order' => 'Manually reconciled; no broker order found',
+            'entry_credit_deferred' => 'API budget reached; entry deferred for retry',
+            'exit_credit_deferred' => 'API budget reached; exit deferred for retry',
             'entry_submitted' => 'Entry submitted', 'entry_cancel_requested' => 'Entry cancellation requested',
             'entry_terminal_without_fill' => 'Entry closed without a fill', 'thesis_expired' => 'Thesis expired',
             'exit_submitted' => 'Exit submitted', 'closed_broker_confirmed' => 'Closure confirmed by broker',
@@ -394,6 +393,9 @@ final class ConvexTelemetryData
         }
         $labels = [
             'entry_not_filled' => 'Entry closed without a fill',
+            'entry_broker_credit_throttled_retry_later' => 'API budget reached; entry deferred for retry',
+            'exit_broker_credit_throttled_retry_later' => 'API budget reached; exit deferred for retry',
+            'manual_recovery_no_broker_order' => 'Manually reconciled; no broker order found',
             'resting_bid_outside_thesis_risk' => 'Bid moved outside the thesis risk budget',
             'entry_cancel_requested_await_broker_confirmation' => 'Cancellation requested; awaiting broker confirmation',
             'unresolved_probe_entry_blocks_new_entry' => 'Waiting for another probe entry to resolve',
