@@ -172,6 +172,15 @@ final class ConvexProbeLifecycle
                     (float) $leg->targetDelta(), $ceiling, array_values(array_unique($reservedOptionIds)),
                     $matrixRow !== null ? $leg->fastExitHardStopPct() : null,
                     $matrixRow !== null ? $leg->fastExitProfitTargetMult() : null,
+                    [
+                        'probe_id' => $run->id, 'thesis_id' => $run->thesis_id,
+                        'matrix_row_hash' => data_get($run->spec, 'matrix_source.row_sha256'),
+                        'settled_cash' => $settled, 'buying_power' => $buyingPower,
+                        'options_spent_today_debit' => $context['options_spent_today_debit'] ?? null,
+                        'caps' => array_intersect_key((array) ($this->cfg['options'] ?? []), array_flip([
+                            'per_play_max_debit', 'per_day_max_debit', 'per_underlying_max_debit',
+                        ])),
+                    ],
                 );
                 if ($selection['blockers'] !== []) {
                     return $this->mark($run, 'staged', implode('; ', $selection['blockers']));
@@ -304,6 +313,7 @@ final class ConvexProbeLifecycle
                 return $this->mark($run, 'ambiguous', 'entry_fill_quantity_conflict');
             }
             $run->forceFill(['entry_filled_qty' => $entryQty, 'entry_average_price' => $this->averagePrice($entry)])->save();
+            $this->orderEvidence($run, 'entry', $entry);
             $entryState = strtolower((string) ($entry['state'] ?? ''));
             if (in_array($entryState, self::OPEN_STATES, true)) {
                 $reason = $run->entry_cancel_reason;
@@ -380,6 +390,7 @@ final class ConvexProbeLifecycle
                     return $this->mark($run, 'ambiguous', 'exit_fill_quantity_conflict');
                 }
                 $run->forceFill(['exit_filled_qty' => $exitQty, 'exit_average_price' => $this->averagePrice($exit)])->save();
+                $this->orderEvidence($run, 'exit', $exit);
                 $positionQty = $this->matchingPositionQuantity($positions, (string) $run->option_id);
                 if ($positionQty !== $entryQty - $exitQty) {
                     return $this->mark($run, 'ambiguous', 'broker_position_quantity_conflicts_with_probe_ownership');
@@ -425,6 +436,7 @@ final class ConvexProbeLifecycle
                 return $this->mark($run, 'ambiguous', 'exit_contract_id_conflicts_with_owned_option');
             }
             $quote = $resolution['quote'] ?? null;
+            $this->evidence($run, 'exit_quote_observed', ['quote' => is_array($quote) ? ConvexEvidence::quote($quote) : null]);
             if (! is_array($quote) || ($quote['stale'] ?? true) || ! is_numeric($quote['bid'] ?? null)) {
                 return $this->mark($run, 'held', 'fresh_exit_bid_unavailable');
             }
@@ -593,6 +605,7 @@ final class ConvexProbeLifecycle
         if ($quote === null) {
             return 'resting_quote_unavailable';
         }
+        $this->evidence($run, 'resting_quote_observed', ['quote' => ConvexEvidence::quote($quote)]);
         if ($quote['stale']) {
             return 'resting_quote_stale';
         }
@@ -731,13 +744,18 @@ final class ConvexProbeLifecycle
 
     private function mark(ConvexProbeRun $run, string $status, ?string $reason): ConvexProbeRun
     {
+        $changed = $run->status !== $status || $run->block_reason !== $reason;
         $run->forceFill(['status' => $status, 'block_reason' => $reason])->save();
+        if ($changed) {
+            $this->evidence($run, 'probe_decision');
+        }
 
         return $run->refresh();
     }
 
     private function record(ConvexProbeRun $run, string $event): void
     {
+        $this->evidence($run, $event);
         $this->recorder->record('convex_probe', [
             'event' => $event, 'thesis_id' => $run->thesis_id, 'leg_id' => $run->leg_id,
             'status' => $run->status, 'entry_order_id' => $run->entry_order_id,
@@ -751,5 +769,44 @@ final class ConvexProbeLifecycle
             'entry_cancel_requested_at' => $run->entry_cancel_requested_at?->toIso8601String(),
             'matrix_source' => data_get($run->spec, 'matrix_source'),
         ]);
+    }
+
+    private function orderEvidence(ConvexProbeRun $run, string $phase, array $order): void
+    {
+        $this->evidence($run, 'broker_order_observed', [
+            'phase' => $phase, 'broker_order_id' => $order['id'] ?? null,
+            'outcome' => $order['state'] ?? null, 'processed_quantity' => $order['processed_quantity'] ?? null,
+            'created_at' => $order['created_at'] ?? null, 'last_transaction_at' => $order['last_transaction_at'] ?? null,
+        ]);
+    }
+
+    private function evidence(ConvexProbeRun $run, string $event, array $extra = []): void
+    {
+        try {
+            $entry = is_numeric($run->entry_average_price) ? (float) $run->entry_average_price : null;
+            $exit = is_numeric($run->exit_average_price) ? (float) $run->exit_average_price : null;
+            $realized = $event === 'closed_broker_confirmed' && $entry !== null && $entry > 0 && $exit !== null;
+            ConvexEvidence::stamp($this->cfg, $event, [
+                'probe_id' => $run->id, 'thesis_id' => $run->thesis_id, 'leg_id' => $run->leg_id,
+                'matrix_row_hash' => data_get($run->spec, 'matrix_source.row_sha256'),
+                'ticker' => $run->underlying_symbol, 'option_id' => $run->option_id,
+                'option_type' => $run->option_type, 'expiration_date' => $run->expiration_date?->toDateString(),
+                'strike_price' => $run->strike_price, 'status' => $run->status,
+                'entry_order_id' => $run->entry_order_id, 'exit_order_id' => $run->exit_order_id,
+                'entry_filled_qty' => $run->entry_filled_qty, 'exit_filled_qty' => $run->exit_filled_qty,
+                'entry_average_price' => $entry, 'exit_average_price' => $exit,
+                'entry_limit_price' => $run->entry_limit_price,
+                'opened_at' => $run->opened_at?->toIso8601String(), 'closed_at' => $run->closed_at?->toIso8601String(),
+                'blockers' => ConvexEvidence::blockers($run->block_reason),
+                'entry_cancel_reason' => $run->entry_cancel_reason, 'exit_reason' => $run->exit_reason,
+                'gross_pnl_usd' => $realized ? round(($exit - $entry) * 100 * (float) $run->exit_filled_qty, 4) : null,
+                'gross_return_bps' => $realized ? round(($exit / $entry - 1) * 10000, 2) : null,
+                // Fee completeness is not verified by this broker adapter.
+                'fees_usd' => null, 'net_pnl_usd' => null, 'net_return_bps' => null, 'fee_status' => 'unverified',
+                ...$extra,
+            ]);
+        } catch (\Throwable) {
+            // Optional observations must not interfere with stewardship.
+        }
     }
 }

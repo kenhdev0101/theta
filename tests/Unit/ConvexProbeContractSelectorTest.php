@@ -11,6 +11,55 @@ use Tests\TestCase;
 
 final class ConvexProbeContractSelectorTest extends TestCase
 {
+    public function test_selection_stamps_prices_rejections_and_partial_reads_without_added_requests(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-22T18:00:00Z'));
+        $dir = sys_get_temp_dir().'/convex-selection-evidence-'.uniqid();
+        $client = $this->createMock(RobinhoodMcpClient::class);
+        $client->expects($this->once())->method('getOptionChains')->willReturn(['data' => ['chains' => [[
+            'id' => 'chain-spy', 'expiration_dates' => ['2026-12-18', '2026-12-25'],
+        ]]]]);
+        $client->expects($this->once())->method('getEquityQuotes')->willReturn(['data' => ['results' => [[
+            'quote' => ['last_trade_price' => '762.90'],
+        ]]]]);
+        $client->expects($this->exactly(2))->method('getOptionInstruments')->willReturn(['data' => ['instruments' => [[
+            'id' => 'option-spy-800', 'strike_price' => '800.00', 'tradability' => 'tradable',
+        ]]]]);
+        $calls = 0;
+        $client->expects($this->exactly(2))->method('getOptionQuotes')->willReturnCallback(function () use (&$calls) {
+            if (++$calls === 2) {
+                throw new \RuntimeException('simulated interruption with secret-error-text');
+            }
+
+            return ['data' => ['results' => [['quote' => [
+                'instrument_id' => 'option-spy-800', 'bid_price' => '4.15', 'ask_price' => '4.18',
+                'delta' => '.2096', 'updated_at' => '2026-10-22T17:59:58Z', 'token' => 'secret-token',
+            ]]]]];
+        });
+        try {
+            $selector = new ConvexProbeContractSelector($client, ['convex' => ['evidence' => ['dir' => $dir]]]);
+            try {
+                $selector->select('SPY', 'call', 57, 70, .20, 50, [], 30, 1.3, ['probe_id' => 698]);
+                $this->fail('original broker exception must propagate');
+            } catch (\RuntimeException $e) {
+                $this->assertSame('simulated interruption with secret-error-text', $e->getMessage());
+            }
+            $raw = file_get_contents($dir.'/convex-evidence-2026-10-22.jsonl');
+            $stamp = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+            $this->assertSame('read_interrupted', $stamp['outcome']);
+            $this->assertSame(698, $stamp['probe_id']);
+            $this->assertSame('4.18', $stamp['samples'][0]['ask']);
+            $this->assertSame(4.17, $stamp['samples'][0]['entry_limit']);
+            $this->assertContains('premium_above_cash_ceiling', $stamp['samples'][0]['blockers']);
+            $this->assertStringNotContainsString('secret', $raw);
+        } finally {
+            foreach (glob($dir.'/*') ?: [] as $path) {
+                unlink($path);
+            }
+            @rmdir($dir);
+        }
+    }
+
     public function test_fresh_near_delta_contract_is_selected_by_broker_id_with_one_contract_cash_ceiling(): void
     {
         $this->travelTo(Carbon::parse('2026-10-07T18:00:00Z'));

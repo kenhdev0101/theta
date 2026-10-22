@@ -80,6 +80,13 @@ return [
     // `enabled` arms the SCHEDULER only — a manual `theta:convex-ingest --once`
     // always runs a sweep.
     'convex' => [
+        // Optional sidecar evidence, bounded independently of durable trading journals.
+        'evidence' => [
+            'enabled' => (bool) env('HARNESS_CONVEX_EVIDENCE_ENABLED', true),
+            'dir' => env('HARNESS_CONVEX_EVIDENCE_DIR'),
+            'retention_days' => (int) env('HARNESS_CONVEX_EVIDENCE_RETENTION_DAYS', 14),
+            'max_daily_bytes' => (int) env('HARNESS_CONVEX_EVIDENCE_MAX_DAILY_BYTES', 33554432),
+        ],
         // Machine decisions are made from fresh sealed matrix rows. Disarming
         // entries never disarms supervision of an already owned position.
         'auto_entry_enabled' => (bool) env('HARNESS_CONVEX_AUTO_ENTRY_ENABLED', false),

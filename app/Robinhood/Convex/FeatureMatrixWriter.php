@@ -77,6 +77,12 @@ final class FeatureMatrixWriter
         }
     }
 
+    /** Same identity as a CSV readback, including booleans and empty outcomes. */
+    public static function rowHash(array $row): string
+    {
+        return hash('sha256', json_encode(array_map(self::cell(...), $row), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
     private static function cell(mixed $value): string
     {
         if ($value === null) {
