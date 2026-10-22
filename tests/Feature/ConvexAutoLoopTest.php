@@ -9,16 +9,84 @@ use App\Robinhood\Convex\ConvexAutoLoop;
 use App\Robinhood\Convex\ConvexLoopLock;
 use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Convex\ConvexMatrixSnapshot;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 use Tests\TestCase;
 
 final class ConvexAutoLoopTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_credit_throttle_backs_off_all_entries_but_not_stewardship_then_retries(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-07T18:02:00Z'));
+        Cache::flush();
+        $path = tempnam(sys_get_temp_dir(), 'convex-credit-');
+        $this->assertIsString($path);
+        try {
+            $this->writeMatrix($path, [
+                ['XLF', '72', '2026-10-07T18:01:00Z', 'ADMIT', '', '', '0.20'],
+                ['XLP', '72', '2026-10-07T18:01:00Z', 'ADMIT', '', '', '0.20'],
+            ]);
+            $client = $this->createMock(RobinhoodMcpClient::class);
+            $calls = 0;
+            $client->expects($this->exactly(3))->method('getPortfolio')->willReturnCallback(
+                static function () use (&$calls): array {
+                    if (++$calls === 1) {
+                        throw new BrokerCreditExhausted('fixture local budget exhausted');
+                    }
+
+                    return ['cash' => '0', 'buying_power' => '0'];
+                },
+            );
+            $client->method('getEquityOrders')->willReturn(['orders' => []]);
+            $client->method('getOptionOrders')->willReturn(['orders' => []]);
+            $client->method('getOptionPositions')->willReturn(['positions' => []]);
+            $client->method('getAccountCapability')->willReturn([]);
+            $client->method('listTools')->willReturn([]);
+            $client->expects($this->never())->method('placeOptionOrder');
+            $cfg = ['agentic_account' => 'fixture-account', 'kill_switch' => false,
+                'convex' => ['matrix_path' => $path, 'auto_entry_enabled' => true,
+                    'tickers' => ['XLF', 'XLP'], 'bucket' => 'index']];
+            $loop = new ConvexAutoLoop($client, $cfg, new JsonlRecorder(sys_get_temp_dir()));
+            $this->assertSame(['staged', 'entry_deferred'], array_column($loop->run(), 'event'));
+            $this->assertSame(1, ConvexProbeRun::count(), 'do not try another ticker on an exhausted budget');
+            $this->assertSame('staged', ConvexProbeRun::sole()->status);
+            $this->assertNull(ConvexProbeRun::sole()->entry_submitted_at);
+            $this->assertSame([], $loop->run());
+
+            // An owned position must still reach its broker reconciliation
+            // while the entry backoff is active, even if that read fails.
+            $held = ConvexProbeRun::query()->create([
+                'thesis_id' => 'held-during-backoff', 'leg_id' => 'probe',
+                'account_number' => 'fixture-account', 'status' => 'held',
+                'underlying_symbol' => 'QQQ', 'option_type' => 'call',
+                'spec' => [], 'spec_hash' => str_repeat('b', 64),
+            ]);
+            $steward = $this->createMock(RobinhoodMcpClient::class);
+            $steward->expects($this->once())->method('getOptionOrders')
+                ->willThrowException(new RuntimeException('fixture read unavailable'));
+            $steward->expects($this->never())->method('getPortfolio');
+            $events = (new ConvexAutoLoop($steward, $cfg, new JsonlRecorder(sys_get_temp_dir())))->run();
+            $this->assertSame(['stewardship_blocked'], array_column($events, 'event'));
+            $held->delete();
+
+            $this->travel(59)->seconds();
+            $this->assertSame([], $loop->run());
+            $this->assertSame(1, $calls);
+            $this->travel(2)->seconds();
+            $events = $loop->run();
+            $this->assertCount(2, array_filter($events, static fn ($e) => $e['event'] === 'entry_checked'));
+            $this->assertSame(3, $calls);
+        } finally {
+            unlink($path);
+        }
+    }
 
     public function test_worker_lock_serializes_and_releases(): void
     {

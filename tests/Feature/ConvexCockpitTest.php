@@ -86,6 +86,23 @@ final class ConvexCockpitTest extends TestCase
         }
     }
 
+    public function test_credit_deferrals_are_visible_in_run_blockers_and_lifecycle_events(): void
+    {
+        $entry = $this->seedRun(['status' => 'staged', 'block_reason' => 'entry_broker_credit_throttled_retry_later']);
+        $exit = $this->seedRun(['status' => 'held', 'block_reason' => 'exit_broker_credit_throttled_retry_later']);
+        $this->event('convex_probe', ['event' => 'entry_credit_deferred', 'thesis_id' => $entry->thesis_id]);
+        $this->event('convex_probe', ['event' => 'exit_credit_deferred', 'thesis_id' => $exit->thesis_id]);
+
+        $r = $this->getJson('/cockpit/convex/data')->assertOk()->assertJsonCount(2, 'timeline');
+        $runs = collect($r->json('runs'))->keyBy('id');
+        $this->assertSame('API budget reached; entry deferred for retry', $runs[$entry->id]['blocker']);
+        $this->assertSame('API budget reached; exit deferred for retry', $runs[$exit->id]['blocker']);
+        $labels = array_column($r->json('timeline'), 'label');
+        $this->assertContains('API budget reached; entry deferred for retry', $labels);
+        $this->assertContains('API budget reached; exit deferred for retry', $labels);
+        Http::assertNothingSent();
+    }
+
     public function test_signals_keep_staleness_missing_inputs_and_future_timestamps_distinct(): void
     {
         $this->matrix([

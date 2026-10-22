@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use App\Robinhood\Mcp\BrokerCreditExhausted;
 use App\Robinhood\Mcp\BrokerCreditLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Support\Facades\Cache;
@@ -27,7 +28,7 @@ class BrokerCreditLimiterTest extends TestCase
 
         $limiter->acquire('first');
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(BrokerCreditExhausted::class);
         $this->expectExceptionMessage('broker credits exhausted');
 
         $limiter->acquire('second');

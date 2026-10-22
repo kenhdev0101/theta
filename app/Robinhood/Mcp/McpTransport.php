@@ -189,7 +189,17 @@ class McpTransport
         $response = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
-            $this->credits?->acquire($operation, lane: $this->creditLane);
+            try {
+                $this->credits?->acquire($operation, lane: $this->creditLane);
+            } catch (BrokerCreditExhausted $e) {
+                // A previous HTTP failure may still have reached the broker.
+                // Never let a throttle on a transport retry certify no send.
+                if ($attempt > 1) {
+                    throw new RuntimeException('mcp request outcome unknown: credit exhausted after an HTTP attempt', 0, $e);
+                }
+
+                throw $e;
+            }
 
             $response = Http::withToken($token)
                 ->withHeaders(array_filter([

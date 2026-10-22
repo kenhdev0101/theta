@@ -7,6 +7,7 @@ namespace App\Robinhood\Convex;
 use App\Models\ConvexProbeRun;
 use App\Models\HarnessOrderRef;
 use App\Robinhood\Execution\OrderRefStore;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
 use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Options\OptionBrokerContext;
@@ -28,6 +29,8 @@ use RuntimeException;
  */
 final class ConvexProbeLifecycle
 {
+    public const ENTRY_CREDIT_DEFERRED = 'entry_broker_credit_throttled_retry_later';
+
     private const STRATEGY = 'convex_thesis_probe';
 
     private const OPEN_STATES = ['queued', 'unconfirmed', 'confirmed', 'placed', 'pending', 'pending_cancel', 'pending_replace', 'partially_filled', 'open', 'new', 'accepted'];
@@ -202,6 +205,13 @@ final class ConvexProbeLifecycle
                         'contract' => $contract, 'quote' => $quote,
                         'convex_matrix_source' => $run->spec['matrix_source'] ?? null,
                     ]));
+                } catch (BrokerCreditExhausted $e) {
+                    $this->recoverRef($run, 'entry');
+                    $run->forceFill(['entry_submitted_at' => null])->save();
+                    $run = $this->mark($run, 'staged', self::ENTRY_CREDIT_DEFERRED);
+                    $this->record($run, 'entry_credit_deferred');
+
+                    return $run;
                 } catch (\Throwable $e) {
                     $this->recoverRef($run, 'entry');
 
@@ -440,6 +450,15 @@ final class ConvexProbeLifecycle
                     'contract' => $resolution['contract'], 'quote' => $quote,
                 ]);
                 $result = $this->executor()->execute($intent, $context);
+            } catch (BrokerCreditExhausted $e) {
+                // Owned risk remains held. The next stewardship tick may
+                // attempt a fresh bounded exit after checking broker truth.
+                $run->forceFill(['exit_intent_key' => null, 'exit_client_ref_id' => null,
+                    'exit_submitted_at' => null])->save();
+                $run = $this->mark($run, 'held', 'exit_broker_credit_throttled_retry_later');
+                $this->record($run, 'exit_credit_deferred');
+
+                return $run;
             } catch (\Throwable $e) {
                 $this->recoverRef($run, 'exit');
 
