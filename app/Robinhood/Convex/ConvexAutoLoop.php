@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Robinhood\Convex;
 
 use App\Models\ConvexProbeRun;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use App\Robinhood\Thesis\ThesisSpec;
@@ -16,6 +17,8 @@ use Throwable;
 /** Machine-owned convex entry and stewardship, with one durable run per ADMIT row. */
 final class ConvexAutoLoop
 {
+    private const ENTRY_CREDIT_BACKOFF = 'theta:convex-auto-entry-credit-backoff';
+
     private readonly ConvexProbeLifecycle $lifecycle;
 
     public function __construct(private readonly RobinhoodMcpClient $client, private readonly array $cfg, JsonlRecorder $recorder)
@@ -90,7 +93,8 @@ final class ConvexAutoLoop
             }
 
             if (! $matrixHealthy || ! (bool) data_get($this->cfg, 'convex.auto_entry_enabled', false)
-                || (bool) data_get($this->cfg, 'kill_switch', true) || ! $this->entryHours()) {
+                || (bool) data_get($this->cfg, 'kill_switch', true) || ! $this->entryHours()
+                || Cache::has(self::ENTRY_CREDIT_BACKOFF)) {
                 return $events;
             }
             $this->client->setCreditLane('standard');
@@ -131,9 +135,21 @@ final class ConvexAutoLoop
                 try {
                     $updated = $this->lifecycle->enter($run);
                     $events[] = ['event' => 'entry_checked', 'thesis_id' => $updated->thesis_id, 'status' => $updated->status];
+                    if ($updated->block_reason === ConvexProbeLifecycle::ENTRY_CREDIT_DEFERRED) {
+                        Cache::put(self::ENTRY_CREDIT_BACKOFF, 1, 60);
+                        break;
+                    }
                     if (in_array($updated->status, ['entry_pending', 'ambiguous'], true)) {
                         break;
                     }
+                } catch (BrokerCreditExhausted $e) {
+                    // Preflight can throttle before the lifecycle marks pending.
+                    // Back off all new entries while stewardship keeps running.
+                    $run->forceFill(['block_reason' => ConvexProbeLifecycle::ENTRY_CREDIT_DEFERRED])->save();
+                    Cache::put(self::ENTRY_CREDIT_BACKOFF, 1, 60);
+                    $events[] = ['event' => 'entry_deferred', 'thesis_id' => $thesisId,
+                        'reason' => ConvexProbeLifecycle::ENTRY_CREDIT_DEFERRED];
+                    break;
                 } catch (Throwable $e) {
                     $events[] = ['event' => 'entry_blocked', 'thesis_id' => $thesisId, 'reason' => $e->getMessage()];
                 }

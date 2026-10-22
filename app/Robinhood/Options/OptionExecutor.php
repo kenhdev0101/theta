@@ -9,6 +9,7 @@ use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Convex\ConvexQuoteReader;
 use App\Robinhood\Execution\OrderRefStore;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Support\Carbon;
@@ -92,6 +93,8 @@ final class OptionExecutor
         if ($boundedConvex) {
             try {
                 $quote = (new ConvexQuoteReader($this->client, $this->cfg))->forOptionId((string) $intent->optionId);
+            } catch (BrokerCreditExhausted $e) {
+                throw $e;
             } catch (\Throwable) {
                 $quote = null;
             }
@@ -150,6 +153,17 @@ final class OptionExecutor
 
         try {
             $placement = $this->client->placeOptionOrder($payload, $ref->client_ref_id);
+        } catch (BrokerCreditExhausted $e) {
+            // No placement request was sent. Preserve the reserved ref so a
+            // later attempt can rerun every rail with the same idempotency key.
+            $this->telemetry->record('options_execution', [
+                'event' => 'placement_deferred',
+                'client_ref_id' => $ref->client_ref_id,
+                'contract' => $intent->contractLabel(),
+                'reason' => 'broker_credit_throttled_before_send',
+            ]);
+
+            throw $e;
         } catch (\Throwable $e) {
             $this->refs->markFailed($ref, $e->getMessage());
             $this->journal($intent, $ref->client_ref_id, 'rejected', [
@@ -287,6 +301,8 @@ final class OptionExecutor
     {
         try {
             return $this->client->reviewOptionOrder($this->reviewPayload($intent));
+        } catch (BrokerCreditExhausted $e) {
+            throw $e;
         } catch (\Throwable $e) {
             // A failed review blocks; it never passes through.
             return ['ok' => false, 'error' => $e->getMessage()];

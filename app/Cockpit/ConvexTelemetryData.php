@@ -345,6 +345,9 @@ final class ConvexTelemetryData
     {
         $known = array_column($runs, 'symbol', 'thesis_id');
         $labels = [
+            'entry_broker_credit_throttled_retry_later' => 'API budget reached; entry deferred for retry',
+            'exit_broker_credit_throttled_retry_later' => 'API budget reached; exit deferred for retry',
+            'manual_recovery_no_broker_order' => 'Manually reconciled; no broker order found',
             'entry_submitted' => 'Entry submitted', 'entry_cancel_requested' => 'Entry cancellation requested',
             'entry_terminal_without_fill' => 'Entry closed without a fill', 'thesis_expired' => 'Thesis expired',
             'exit_submitted' => 'Exit submitted', 'closed_broker_confirmed' => 'Closure confirmed by broker',

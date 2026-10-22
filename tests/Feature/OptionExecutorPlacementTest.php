@@ -8,6 +8,7 @@ use App\Models\ConvexProbeRun;
 use App\Models\HarnessOrderRef;
 use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Execution\OrderRefStore;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Options\OptionExecutor;
 use App\Robinhood\Options\OptionOrderIntent;
@@ -16,6 +17,7 @@ use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -42,6 +44,8 @@ class OptionExecutorPlacementTest extends TestCase
     private int $reviewCalls = 0;
 
     private ?\Closure $onReview = null;
+
+    private ?\Closure $onPlace = null;
 
     private ?array $liveOptionQuote = null;
 
@@ -80,6 +84,10 @@ class OptionExecutorPlacementTest extends TestCase
                         HarnessOrderRef::query()->where('client_ref_id', $refId)->exists(),
                         'option ref_id must be persisted BEFORE the broker place call',
                     );
+
+                    if ($this->onPlace !== null) {
+                        return ($this->onPlace)();
+                    }
 
                     return $this->toolResponse($payload['id'], [
                         'data' => [
@@ -165,6 +173,66 @@ class OptionExecutorPlacementTest extends TestCase
             'open_option_positions' => [],
             'open_option_orders' => [],
         ];
+    }
+
+    public function test_credit_throttle_sends_no_order_and_retries_same_ref_after_full_rails(): void
+    {
+        $this->travelTo(Carbon::parse('2026-05-13T15:00:00Z'));
+        config()->set('harness.broker_credits', ['enabled' => true, 'max_per_minute' => 10,
+            'mode' => 'fail', 'max_wait_seconds' => 0, 'cache_key' => 'test:executor:deferral']);
+        $window = 'test:executor:deferral:'.now()->format('YmdHi');
+        $this->onReview = static fn () => Cache::put($window, 10, 120);
+        $this->fakeMcp();
+        try {
+            $this->executor()->execute($this->intent(), $this->greenContext());
+            $this->fail('placement must defer');
+        } catch (BrokerCreditExhausted) {
+            $this->assertSame([], $this->placedRefIds);
+        }
+        $ref = HarnessOrderRef::sole();
+        $this->assertSame('reserved', $ref->status);
+        $this->assertNull($ref->broker_order_id);
+        $this->assertSame(0, RobinhoodTradeJournal::count());
+
+        $this->travel(1)->minutes();
+        $this->onReview = null;
+        $context = $this->greenContext();
+        $context['settled_cash'] = 0;
+        $blocked = $this->executor()->execute($this->intent(), $context);
+        $this->assertSame('LIVE_RISK_ABORTED', $blocked['classification']);
+        $this->assertSame([], $this->placedRefIds);
+
+        $result = $this->executor()->execute($this->intent(), $this->greenContext());
+        $this->assertSame('LIVE_POSTED_NOT_FILLED', $result['classification']);
+        $this->assertSame([$ref->client_ref_id], $this->placedRefIds);
+        $this->assertSame(1, HarnessOrderRef::count());
+    }
+
+    public function test_credit_exhaustion_after_an_http_attempt_stays_ambiguous_and_cannot_retry(): void
+    {
+        $this->travelTo(Carbon::parse('2026-05-13T15:00:00Z'));
+        config()->set('harness.broker_credits', ['enabled' => true, 'max_per_minute' => 10,
+            'mode' => 'fail', 'max_wait_seconds' => 0, 'cache_key' => 'test:executor:unknown']);
+        $window = 'test:executor:unknown:'.now()->format('YmdHi');
+        $this->onPlace = static function () use ($window) {
+            Cache::put($window, 10, 120);
+
+            return Http::response([], 500);
+        };
+        $this->fakeMcp();
+        try {
+            $this->executor()->execute($this->intent(), $this->greenContext());
+            $this->fail('HTTP outcome must remain unverified');
+        } catch (\RuntimeException $e) {
+            $this->assertNotInstanceOf(BrokerCreditExhausted::class, $e);
+            $this->assertStringContainsString('outcome unknown', $e->getMessage());
+        }
+        $this->assertCount(1, $this->placedRefIds);
+        $this->assertSame('failed', HarnessOrderRef::sole()->status);
+        $this->travel(1)->minutes();
+        $result = $this->executor()->execute($this->intent(), $this->greenContext());
+        $this->assertSame('LIVE_RISK_ABORTED', $result['classification']);
+        $this->assertCount(1, $this->placedRefIds);
     }
 
     public function test_allowed_bto_places_with_persisted_ref_and_measured_wire_format(): void

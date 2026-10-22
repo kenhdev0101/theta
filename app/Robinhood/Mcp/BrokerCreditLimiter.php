@@ -94,7 +94,7 @@ final class BrokerCreditLimiter
             }
 
             if ($mode === 'fail' || microtime(true) >= $deadline) {
-                throw new RuntimeException(sprintf(
+                throw new BrokerCreditExhausted(sprintf(
                     'broker credits exhausted for %s: used=%s requested=%d max_per_minute=%d lane=%s ceiling=%d mode=%s',
                     $operation,
                     $used === null ? 'lock_unavailable' : (string) $used,

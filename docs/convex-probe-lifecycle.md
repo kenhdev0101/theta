@@ -6,6 +6,16 @@ Scope: one-contract, long-call mechanical lifecycle using the JSON thesis-spec p
 Status: machine loop built for autonomous admission and stewardship; original and first thesis-expiry live probes broker-confirmed closed and journal-reconciled; second distinct expiry probe pending eligibility
 Date: 2026-10-07
 
+## Local API-budget deferral (2026-10-22)
+
+A local credit denial before an HTTP attempt is a typed `BrokerCreditExhausted` failure. An entry returns to `staged`, clears its provisional submission timestamp, and retains its reserved idempotency reference. The automatic loop backs off new entries for 60 seconds across all tickers, while stewardship continues. A later attempt must pass fresh broker context, quotes, admission, review, and capital rails again. If an exit is throttled, the position remains `held` and the next stewardship tick can try a new bounded exit attempt.
+
+Transport must wrap credit exhaustion after any prior HTTP attempt as an uncertain outcome. Timeouts, unknown broker responses, and generic errors (even those containing the word “credit”) retain the existing ambiguous/reconcile behavior. No historical ambiguous row is automatically cleared by this patch. The API ceiling, stewardship reserve, capital caps, signal rules, and read cadence are unchanged.
+
+Probe #317 was manually closed without a fill on 2026-10-22 at 16:54:55 UTC under operator authorization. Recovery held the automatic-loop, wallet, and probe locks; verified the known local-credit error and failed reference; read broker history covering the attempted submission; and confirmed no later broker orders, no open orders, and no option positions. The failed reference and rejected journal remain intact. The former provisional submission timestamp and evidence are preserved in `storage/harness/convex_recovery-2026-10-22.jsonl`; no broker write was made during recovery.
+
+Regression coverage: `ConvexCreditDeferralTest`, `ConvexAutoLoopTest`, `OptionExecutorPlacementTest`, and `BrokerCreditLimiterTest`. Verify deployment under the automatic-loop advisory lock and retain a file backup. Use saved telemetry for readback; do not invoke a live loop merely to test deployment.
+
 ## What the probe exercises
 
 `specs/convex-mechanical-probe-20261007.json` is one `role=probe` leg, near 0.20 absolute delta, 7–21 DTE, with a ten-minute maximum hold, profit target, and hard stop. `theta:convex-probe stage` validates and persists its immutable spec. `enter` resolves a real Robinhood option ID from Friday expirations and fresh two-sided quotes, checks that one contract fits available settled cash and buying power, then uses the existing option rails, broker review, persisted `ref_id`, and limit-order executor. Entry is explicit; the scheduled `tick` never opens a staged spec.
