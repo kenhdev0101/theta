@@ -19,8 +19,12 @@ final class ConvexCreditDeferralTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_entry_throttle_returns_to_staged_and_later_reuses_reserved_ref(): void
+    #[DataProvider('evidenceAvailability')]
+    public function test_entry_throttle_returns_to_staged_and_later_reuses_reserved_ref(bool $unwritableEvidence): void
     {
+        if ($unwritableEvidence) {
+            config()->set('harness.convex.evidence.dir', __FILE__.'/not-a-directory');
+        }
         $this->travelTo(Carbon::parse('2026-10-07T18:00:00Z'));
         $client = $this->client();
         $refs = [];
@@ -47,6 +51,11 @@ final class ConvexCreditDeferralTest extends TestCase
         $this->assertSame('entry-1', $run->entry_order_id);
         $this->assertSame($refs[0], $refs[1]);
         $this->assertSame(1, HarnessOrderRef::count());
+    }
+
+    public static function evidenceAvailability(): array
+    {
+        return ['normal evidence' => [false], 'evidence IO failure' => [true]];
     }
 
     public function test_generic_error_with_credit_text_keeps_entry_ambiguous(): void

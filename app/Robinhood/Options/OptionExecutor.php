@@ -6,6 +6,7 @@ namespace App\Robinhood\Options;
 
 use App\Models\ConvexProbeRun;
 use App\Models\RobinhoodTradeJournal;
+use App\Robinhood\Convex\ConvexEvidence;
 use App\Robinhood\Convex\ConvexMatrixAdmission;
 use App\Robinhood\Convex\ConvexQuoteReader;
 use App\Robinhood\Execution\OrderRefStore;
@@ -40,6 +41,7 @@ final class OptionExecutor
         if (($intent->optionId ?? '') === '') {
             throw new RuntimeException('executor requires a resolver-stamped option_id — symbolic intents resolve before execution');
         }
+        $this->evidence($intent, 'execution_quote_observed', ['phase' => 'before_review', 'quote' => ConvexEvidence::quote((array) ($context['quote'] ?? []))]);
 
         $boundedConvex = $intent->source === 'theta:convex-probe' && $intent->isOpening()
             && ($intent->metadata['entry_mode'] ?? null) === 'convex_bounded_resting';
@@ -107,6 +109,7 @@ final class OptionExecutor
                 return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
             }
             $context['quote'] = $quote;
+            $this->evidence($intent, 'execution_quote_observed', ['phase' => 'after_review', 'quote' => ConvexEvidence::quote($quote)]);
             $verdict = $this->rails->evaluate($intent, $this->cfg, $context);
             if (! $verdict->allowed()) {
                 return $this->abort($intent, $verdict, $ref->client_ref_id, $context['review'] ?? null, $this->contextJournalId($context));
@@ -150,12 +153,16 @@ final class OptionExecutor
         }
 
         $payload = $this->placePayload($intent);
+        $this->evidence($intent, 'placement_attempt', [
+            'client_ref_id' => $ref->client_ref_id, 'quote' => ConvexEvidence::quote((array) ($context['quote'] ?? [])),
+        ]);
 
         try {
             $placement = $this->client->placeOptionOrder($payload, $ref->client_ref_id);
         } catch (BrokerCreditExhausted $e) {
             // No placement request was sent. Preserve the reserved ref so a
             // later attempt can rerun every rail with the same idempotency key.
+            $this->evidence($intent, 'placement_deferred', ['client_ref_id' => $ref->client_ref_id, 'outcome' => 'broker_credit_throttled_before_send']);
             $this->telemetry->record('options_execution', [
                 'event' => 'placement_deferred',
                 'client_ref_id' => $ref->client_ref_id,
@@ -165,6 +172,7 @@ final class OptionExecutor
 
             throw $e;
         } catch (\Throwable $e) {
+            $this->evidence($intent, 'placement_unknown', ['client_ref_id' => $ref->client_ref_id]);
             $this->refs->markFailed($ref, $e->getMessage());
             $this->journal($intent, $ref->client_ref_id, 'rejected', [
                 'rail_verdict' => $verdict->toArray(),
@@ -181,6 +189,7 @@ final class OptionExecutor
         }
 
         $brokerOrderId = $this->brokerOrderId($placement);
+        $this->evidence($intent, 'placement_acknowledged', ['client_ref_id' => $ref->client_ref_id, 'broker_order_id' => $brokerOrderId]);
         $this->refs->markPlaced($ref, is_string($brokerOrderId) ? $brokerOrderId : null);
 
         $journal = $this->journal($intent, $ref->client_ref_id, 'submitted', [
@@ -311,6 +320,7 @@ final class OptionExecutor
 
     private function abort(OptionOrderIntent $intent, OptionRailVerdict $verdict, ?string $refRow, ?array $review = null, ?int $journalId = null): array
     {
+        $this->evidence($intent, 'execution_blocked', ['client_ref_id' => $refRow, 'blockers' => $verdict->blockReasons()]);
         $recordedJournalId = $journalId;
         if ($refRow !== null) {
             $journal = $this->journal($intent, $refRow, 'risk_aborted', [
@@ -338,6 +348,20 @@ final class OptionExecutor
             'journal_id' => $recordedJournalId,
             'placement' => null,
         ];
+    }
+
+    private function evidence(OptionOrderIntent $intent, string $event, array $extra): void
+    {
+        if ($intent->source !== 'theta:convex-probe') {
+            return;
+        }
+        ConvexEvidence::stamp($this->cfg, $event, [
+            'thesis_id' => $intent->metadata['thesis_id'] ?? null, 'leg_id' => $intent->metadata['leg_id'] ?? null,
+            'ticker' => $intent->underlyingSymbol, 'option_id' => $intent->optionId,
+            'option_type' => $intent->optionType, 'expiration_date' => $intent->expirationDate,
+            'strike_price' => $intent->strikePrice, 'side' => $intent->side, 'quantity' => $intent->quantity,
+            'limit_price' => $intent->limitPrice, ...$extra,
+        ]);
     }
 
     private function refSummary(array $context): ?array

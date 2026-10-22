@@ -15,7 +15,27 @@ final class ConvexProbeContractSelector
 
     /** @return array{contract?:array,quote?:array,blockers:list<string>} */
     /** @param list<string> $excludedOptionIds */
-    public function select(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds = [], ?float $hardStopPct = null, ?float $profitTargetMult = null): array
+    public function select(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds = [], ?float $hardStopPct = null, ?float $profitTargetMult = null, array $evidenceContext = []): array
+    {
+        $samples = [];
+        $result = null;
+        try {
+            $result = $this->selectObserved($symbol, $type, $minDte, $maxDte, $targetDelta, $maxPremium,
+                $excludedOptionIds, $hardStopPct, $profitTargetMult, $samples);
+
+            return $result;
+        } finally {
+            ConvexEvidence::stamp($this->cfg, 'selection_observed', [
+                ...$evidenceContext, 'ticker' => $symbol, 'option_type' => $type,
+                'target_delta' => $targetDelta, 'premium_ceiling_usd' => $maxPremium,
+                'outcome' => $result === null ? 'read_interrupted' : (isset($result['contract']) ? 'selected' : 'blocked'),
+                'contract' => $result['contract'] ?? null, 'quote' => $result['quote'] ?? null,
+                'blockers' => $result['blockers'] ?? [], 'samples' => $samples,
+            ]);
+        }
+    }
+
+    private function selectObserved(string $symbol, string $type, int $minDte, int $maxDte, float $targetDelta, float $maxPremium, array $excludedOptionIds, ?float $hardStopPct, ?float $profitTargetMult, array &$samples): array
     {
         if ($minDte < 1 || $maxDte < $minDte || $targetDelta <= 0 || $targetDelta >= 1 || $maxPremium <= 0) {
             return ['blockers' => ['probe_selection_invalid']];
@@ -138,8 +158,15 @@ final class ConvexProbeContractSelector
                         continue;
                     }
                     $quotedInstruments++;
+                    $sample = min(count($samples), 31);
+                    $samples[$sample] = [
+                        'option_id' => $id, 'expiration_date' => $expiration,
+                        'strike_price' => (float) $instrument['strike_price'],
+                        ...ConvexEvidence::quote($quote), 'blockers' => [],
+                    ];
                     if (in_array($id, $excludedOptionIds, true)) {
                         $rejected['excluded_option_id']++;
+                        $samples[$sample]['blockers'][] = 'excluded_option_id';
 
                         continue;
                     }
@@ -149,11 +176,13 @@ final class ConvexProbeContractSelector
                     $updated = $quote['updated_at'] ?? null;
                     if ($bid === null || $ask === null || $ask < $bid || $delta === null || ! is_string($updated)) {
                         $rejected['invalid_two_sided_quote']++;
+                        $samples[$sample]['blockers'][] = 'invalid_two_sided_quote';
 
                         continue;
                     }
                     if (abs($delta - $targetDelta) > 0.05) {
                         $rejected['delta_outside_target']++;
+                        $samples[$sample]['blockers'][] = 'delta_outside_target';
 
                         continue;
                     }
@@ -161,6 +190,7 @@ final class ConvexProbeContractSelector
                         $age = abs(Carbon::parse($updated)->diffInSeconds(Carbon::now()));
                     } catch (\Throwable) {
                         $rejected['quote_stale']++;
+                        $samples[$sample]['blockers'][] = 'quote_stale';
 
                         continue;
                     }
@@ -172,21 +202,29 @@ final class ConvexProbeContractSelector
                     );
                     $limit = $pricing['limit'] ?? ceil($ask * 100) / 100;
                     $premium = $limit * 100;
+                    $samples[$sample]['age_seconds'] = $age;
+                    $samples[$sample]['entry_limit'] = $limit;
+                    $samples[$sample]['round_trip_cost_bps'] = $pricing['round_trip_cost_bps'] ?? null;
+                    $samples[$sample]['round_trip_budget_bps'] = $pricing['round_trip_budget_bps'] ?? null;
                     $blocked = false;
                     if ($age > $quoteAgeLimit) {
                         $rejected['quote_stale']++;
+                        $samples[$sample]['blockers'][] = 'quote_stale';
                         $blocked = true;
                     }
                     if ($hardStopPct === null && $spreadBps > $maxSpreadBps) {
                         $rejected['spread_above_rail']++;
+                        $samples[$sample]['blockers'][] = 'spread_above_rail';
                         $blocked = true;
                     }
                     if ($pricing !== null && ! isset($pricing['limit'])) {
+                        $samples[$sample]['blockers'][] = $pricing['blocker'];
                         $rejected[$pricing['blocker']] = ($rejected[$pricing['blocker']] ?? 0) + 1;
                         $blocked = true;
                     }
                     if ($premium > $maxPremium) {
                         $rejected['premium_above_cash_ceiling']++;
+                        $samples[$sample]['blockers'][] = 'premium_above_cash_ceiling';
                         $blocked = true;
                     }
                     if ($blocked) {

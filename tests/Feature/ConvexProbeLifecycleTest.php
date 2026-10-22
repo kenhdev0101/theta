@@ -625,7 +625,8 @@ final class ConvexProbeLifecycleTest extends TestCase
         ]]]]);
         $client->method('getOptionPositions')->willReturn(['data' => ['positions' => []]]);
         $client->expects($this->never())->method('placeOptionOrder');
-        $service = new ConvexProbeLifecycle($client, ['agentic_account' => '872449178'], new JsonlRecorder(sys_get_temp_dir()));
+        $dir = sys_get_temp_dir().'/convex-outcome-'.uniqid();
+        $service = new ConvexProbeLifecycle($client, ['agentic_account' => '872449178', 'convex' => ['evidence' => ['dir' => $dir]]], new JsonlRecorder(sys_get_temp_dir()));
         $run = $service->stage($this->spec());
         $run->forceFill([
             'status' => 'exit_pending', 'option_id' => 'option-1', 'entry_order_id' => 'entry-1',
@@ -638,6 +639,19 @@ final class ConvexProbeLifecycleTest extends TestCase
         $this->assertSame(1.0, (float) $updated->exit_filled_qty);
         $this->assertSame(0.25, (float) $updated->exit_average_price);
         $this->assertNotNull($updated->closed_at);
+        $file = glob($dir.'/*.jsonl')[0];
+        $rows = array_map(fn ($line) => json_decode($line, true, 512, JSON_THROW_ON_ERROR), file($file));
+        $outcome = $rows[array_key_last($rows)];
+        $this->assertSame('closed_broker_confirmed', $outcome['event']);
+        $this->assertSame(3, $outcome['gross_pnl_usd']);
+        $this->assertSame(1363.64, $outcome['gross_return_bps']);
+        $this->assertNull($outcome['fees_usd']);
+        $this->assertNull($outcome['net_return_bps']);
+        $this->assertSame('unverified', $outcome['fee_status']);
+        $this->assertSame('entry-1', $outcome['entry_order_id']);
+        $this->assertSame('exit-1', $outcome['exit_order_id']);
+        unlink($file);
+        rmdir($dir);
     }
 
     public function test_restart_with_unverified_exit_intent_never_creates_another_sell(): void

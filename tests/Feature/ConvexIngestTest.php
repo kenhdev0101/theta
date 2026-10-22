@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Robinhood\Convex\ConvexMatrixSnapshot;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -49,11 +50,16 @@ class ConvexIngestTest extends TestCase
         config()->set('harness.convex.dte_ceiling', 90);
         config()->set('harness.convex.tenors_per_ticker', 2);
         config()->set('harness.convex.matrix_path', $this->matrixPath);
+        config()->set('harness.convex.evidence.dir', $this->matrixPath.'-evidence');
     }
 
     protected function tearDown(): void
     {
         @unlink($this->matrixPath);
+        foreach (glob($this->matrixPath.'-evidence/*') ?: [] as $path) {
+            unlink($path);
+        }
+        @rmdir($this->matrixPath.'-evidence');
         parent::tearDown();
     }
 
@@ -109,6 +115,24 @@ class ConvexIngestTest extends TestCase
             'the matrix math must receive the same entry cap as the live order rail');
     }
 
+    public function test_signal_stamp_has_source_quote_and_same_hash_without_extra_broker_reads(): void
+    {
+        $this->fakeBrokerAndGreeks();
+        $this->artisan('theta:convex-ingest --once')->assertExitCode(0);
+        $calls = $this->optionQuoteCalls;
+        $file = glob($this->matrixPath.'-evidence/*.jsonl')[0];
+        $rows = array_map(fn ($line) => json_decode($line, true, 512, JSON_THROW_ON_ERROR), file($file));
+        $this->assertCount(2, $rows);
+        $this->assertSame('1.200000', $rows[0]['quote']['ask']);
+        $this->assertSame('2026-10-07T13:59:57.000000Z', $rows[0]['quote']['updated_at']);
+        $latest = (new ConvexMatrixSnapshot($this->matrixPath))->latest();
+        $this->assertSame($latest['SPY:50']['hash'], $rows[0]['matrix_row_hash']);
+        config()->set('harness.convex.evidence.enabled', false);
+        $this->artisan('theta:convex-ingest --once')->assertExitCode(0);
+        $this->assertSame($calls * 2, $this->optionQuoteCalls);
+        $this->assertCount(2, file($file));
+    }
+
     public function test_schema_drift_row_is_surfaced_not_appended(): void
     {
         $this->schemaOk = false;
@@ -119,6 +143,7 @@ class ConvexIngestTest extends TestCase
             ->assertExitCode(0);
 
         $this->assertFileDoesNotExist($this->matrixPath);
+        $this->assertSame([], glob($this->matrixPath.'-evidence/*.jsonl'));
     }
 
     public function test_dry_run_computes_but_writes_nothing(): void
@@ -130,6 +155,7 @@ class ConvexIngestTest extends TestCase
             ->assertExitCode(0);
 
         $this->assertFileDoesNotExist($this->matrixPath);
+        $this->assertSame([], glob($this->matrixPath.'-evidence/*.jsonl'));
         $this->assertGreaterThan(0, $this->optionQuoteCalls, 'dry-run still reads live quotes');
     }
 
@@ -144,6 +170,7 @@ class ConvexIngestTest extends TestCase
 
         $this->assertSame(0, $this->equityQuoteCalls, 'a disarmed scheduled run must make no broker calls');
         $this->assertFileDoesNotExist($this->matrixPath);
+        $this->assertSame([], glob($this->matrixPath.'-evidence/*.jsonl'));
     }
 
     private function fakeBrokerAndGreeks(): void
@@ -338,7 +365,7 @@ class ConvexIngestTest extends TestCase
             'atm_iv' => 0.15, 'realized_vol' => null, 'iv_rv_ratio' => null, 'rr25' => -0.02,
             'fringe_richness' => -0.01, 'quiet_dispersion' => 0.02,
             'max_quotable_sigma' => 2.4, 'n_quotable_past_2sigma' => 3, 'wing_slope' => -0.1, 'vega_class' => 'TAILWIND',
-            'far_strike' => round($spot * 1.05, 2), 'far_delta' => 0.2, 'quoted_spread_bps' => 120.0,
+            'far_strike' => 695.0, 'far_delta' => 0.2, 'quoted_spread_bps' => 120.0,
             'achievable_cost_bps' => 35.0, 'fill_probability' => 0.9, 'availability' => 0.8,
             'anchor_strike' => round($spot * 1.02, 2), 'anchor_delta_accel' => 0.03, 'fringe_strike' => round($spot * 1.1, 2),
             'convex_asymmetry' => 3.1, 'convex_accel' => 1.4, 'flip_move' => 0.01,

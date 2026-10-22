@@ -39,6 +39,9 @@ Schedule::command('theta:convex-reconcile')
     ->everyMinute()
     ->withoutOverlapping(5)
     ->runInBackground();
+// Only the optional evidence stream expires; broker journals/matrix stay durable.
+Schedule::command('theta:convex-evidence --prune')
+    ->timezone('UTC')->dailyAt('00:15')->withoutOverlapping(10)->runInBackground();
 // Fringe-convexity data-plane ingestion (READ-ONLY). Registration is
 // unconditional; the command self-disarms when harness.convex.enabled is false
 // (scheduler arm only — a manual `theta:convex-ingest --once` always sweeps).

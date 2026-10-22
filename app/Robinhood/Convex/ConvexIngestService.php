@@ -159,6 +159,20 @@ final class ConvexIngestService
         if ($schemaOk && $append) {
             $this->writer->append(array_keys($row), $row);
             $appended = true;
+            $farQuote = null;
+            foreach ($calls['quotes'] as $candidate) {
+                if (is_numeric($row['far_strike'] ?? null) && (float) $candidate['strike_price'] === (float) $row['far_strike']) {
+                    $farQuote = $candidate;
+                    break;
+                }
+            }
+            ConvexEvidence::stamp($this->cfg, 'signal_observed', [
+                'matrix_row_hash' => FeatureMatrixWriter::rowHash($row),
+                'snapshot_ts' => $row['snapshot_ts'] ?? null, 'ticker' => $ticker,
+                'dte' => $dte, 'expiration_date' => $expiration, 'verdict' => $row['verdict'] ?? null,
+                'target_delta' => $row['far_delta'] ?? null, 'strike_price' => $row['far_strike'] ?? null,
+                'quote' => $farQuote, 'outcome' => $farQuote === null ? 'source_quote_unavailable' : 'source_quote_observed',
+            ]);
         }
 
         $this->stamp('convex_ingest', [
@@ -208,7 +222,7 @@ final class ConvexIngestService
      * whole wing shape (ATM → deep fringe) survives, then quoted in ≤20-id
      * chunks (broker close-data cap).
      *
-     * @return array{rows:list<array<string,mixed>>, max_age:float, stale:int, n_instruments:int}
+     * @return array{rows:list<array<string,mixed>>, quotes:list<array<string,mixed>>, max_age:float, stale:int, n_instruments:int}
      */
     private function buildSideRows(string $chainId, string $expiration, string $type, float $spot, float $lo, float $hi): array
     {
@@ -232,6 +246,7 @@ final class ConvexIngestService
         }
 
         $rows = [];
+        $quotes = [];
         $maxAge = 0.0;
         $stale = 0;
         $gate = (int) data_get($this->cfg, 'convex.min_quote_fresh_seconds', 60);
@@ -250,12 +265,18 @@ final class ConvexIngestService
                     continue;
                 }
                 $rows[] = $extracted['row'];
+                $quotes[] = [
+                    'option_id' => $instrumentId, 'option_type' => $type, 'expiration_date' => $expiration,
+                    'strike_price' => $byId[$instrumentId],
+                    ...ConvexEvidence::quote($quote),
+                    'age_seconds' => $extracted['age'], 'stale' => $extracted['stale'],
+                ];
                 $maxAge = max($maxAge, $extracted['age'] ?? 0.0);
                 $stale += $extracted['stale'] ? 1 : 0;
             }
         }
 
-        return ['rows' => $rows, 'max_age' => round($maxAge, 3), 'stale' => $stale, 'n_instruments' => count($byId)];
+        return ['rows' => $rows, 'quotes' => $quotes, 'max_age' => round($maxAge, 3), 'stale' => $stale, 'n_instruments' => count($byId)];
     }
 
     /**
