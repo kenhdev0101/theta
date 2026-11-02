@@ -787,7 +787,20 @@ Scored by trench knowledge, never by a model (Core Architecture Law). Per name:
 
 - **`oracle` (0–10)** — how hard the Street already buys the company's AI-marketing narrative. Stays
   a human score (the edge is tacit); no measured composite is built unless the simple score proves
-  unreliable.
+  unreliable. Higher oracle = more discount in 10.2 (we favor the un-bypassable name the market is
+  *ignoring*):
+
+| Score | `oracle` — how hard the Street already buys the AI-marketing narrative |
+|---|---|
+| 9–10 | The name **IS** the consensus AI trade — max adoration, story fully priced, valuation embeds the narrative. |
+| 7–8 | Heavily-owned, widely-cited AI winner; narrative largely priced, some debate left. |
+| 4–6 | AI angle recognized but contested or secondary to the core business; mixed Street view. |
+| 2–3 | AI relevance under-appreciated; Street still treats it as a non-AI name. |
+| 0–1 | Off the AI radar — no narrative premium; the market doesn't connect it to the thesis. |
+
+Scoring: one lane at a time for calibration; score `friction` and `oracle` independently; low scores
+must mean a genuine read, not sparse coverage. Seed sheet: `docs/weighting-seed.csv` (203 names,
+objective columns pre-filled).
 
 ### 10.2 Score (bounded — friction leads)
 
