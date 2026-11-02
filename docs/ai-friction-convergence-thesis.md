@@ -634,6 +634,64 @@ Split: control-plane cleanup beneficiaries (edge-adjacent) vs defense-capex beta
 > *separate* thesis; keep it catalogued but out of the core gap trade unless a name earns in on its
 > own.
 
+### Tape index additions — 2026-11-02 sweep pt.4 (energy/grid · cyber-insurance · audit/consulting cleanup)
+
+Catalogue only — no weighting; capex-beta / fit tags carried.
+
+**Lane J — energy / grid demand-response & fuel cycle (Lane-D family extension).** Mostly
+AI-capex-beta or commodity-levered fuel cycle; one concretely-evidenced name.
+
+| Ticker | Player | Role | Tag / hook |
+|---|---|---|---|
+| BE | Bloom Energy | behind-the-meter fuel cells | **[ev]** AI-capex-beta but most concrete: Nebius 300MW NJ deal (~250MW guaranteed, fees up to $2.6B/term); 2026 guide raised to $4.4–4.6B rev; Oracle deal reported |
+| CCJ | Cameco | uranium / fuel cycle | **[ev]** picks-and-shovels; 2026 output 19.5–21.5M lb U3O8; >28M lb/yr contracted (5yr) |
+| LEU | Centrus Energy | enrichment / HALEU | **[ev]** Piketon expansion (Fluor EPC) + Oklo HALEU supply deal; execution / gov-support dependent |
+| ITRI | Itron | grid-edge / metering / DR | closest to **paid-regardless** grid-edge; ev TBD |
+| GNRC | Generac | backup power / DR | AI-capex-beta; ev TBD |
+| MYRG | MYR Group | T&D construction | AI-capex-beta |
+| JCI | Johnson Controls | datacenter HVAC / controls | mixed (service base + capex) |
+| STEM / FLNC | Stem / Fluence | grid storage / VPP | AI-capex-beta; STEM speculative / troubled |
+| UEC | Uranium Energy | uranium producer | fuel-cycle; commodity-levered |
+
+**Lane K — cyber-insurance / AI-liability (attributable-harm force-buy).** **Honest read: a
+Munich-Re-led specialist optionality thesis, NOT a broad "incidents force-buy coverage" trade
+yet.** The mechanism is real, but 2026 cyber pricing is *soft* (rates falling) and the dedicated
+AI-liability market is still small — the demand floor is not in premiums yet.
+
+| Ticker | Player | Role | Tag / hook |
+|---|---|---|---|
+| MURGY / MUV2.DE | Munich Re | **AI-performance-insurance specialist** | **cleanest fit** — aiSure/aiSelf literally insures the demo-vs-load gap; white-label AI GL; ~$15B cyber mkt '25. Caveat: not yet material to earnings |
+| BEZ.L | Beazley | cyber carrier (most direct) | direct cyber underwriting BUT 2026 cyber rev −12% YoY (soft pricing) — rising risk ≠ premium growth. No US handle |
+| SSREY / SREN.SW | Swiss Re | reinsurer | cyber premium $16.4B('26)→$17.1B('27) but rates 13%→5%; no named AI product |
+| RNR / EG | RenaissanceRe / Everest | reinsurers | broad cyber risk transfer; no dedicated AI product |
+| MMC / AON / AJG / WTW | brokers | placement / advisory | benefit if clients seek AI-risk cover; soft market (Aon); don't carry losses |
+| CB / TRV / AIG / HSX.L | P&C carriers | cyber carriers | broad P&C dilutes the thesis (TRV owns Corvus) |
+| Coalition / At-Bay | cyber-InsurTech | **private** | **[no handle]**; Corvus → Travelers |
+
+> Trigger discipline: keep **MURGY** as the watch-handle; the force-buy re-rates insurance only
+> when cyber pricing inflects AND the AI-liability market materializes (the §5 incident route + a
+> hard-market turn). Until then it is optionality, not an earnings trade.
+
+**Lane L — audit / Big-4 / consulting cleanup (the "pay a sharp" + blame-shift demand floor).**
+Big 4 (Deloitte / PwC / EY / KPMG) confirmed **no public handle** (private partnerships). Public
+proxies split into governance SOFTWARE (cleanest), advisory, and implementation.
+
+| Ticker | Player | Role | Tag / hook |
+|---|---|---|---|
+| WK | Workiva | **governance / GRC / reporting software** | cleanest business-model fit (the audit-the-mess reporting layer); 2026 AI catalyst TBD |
+| WTKWY / WKL.AS | Wolters Kluwer | governance / compliance software | clearest cited 2026 AI-risk/governance activity (AI Risk & Governance Index); diversified |
+| IBM | IBM (watsonx.governance) | governance software + consulting | strongest *named* AI-governance product; broad (dual w/ Zone 2) |
+| IT | Gartner | **advisory + market signal** | sizes the force-buy: AI-governance-platform spend $492M('26)→>$1B('30); advisory-demand beneficiary |
+| TRI | Thomson Reuters | content / workflow governance | qualified proxy (dual w/ legal lane) |
+| ACN / CTSH | Accenture / Cognizant | implementation consulting | CTSH has a "Real-Time AI Governance" framework; both broad (ACN also Lane-A2 short) |
+| FORR | Forrester | advisory | ev TBD |
+| INTU / VRSK / CBZ / RGP / SSNC / BR | adjacent | diluted | logged; do NOT treat adjacency as proof |
+
+> Cleanest NEW edge-adjacent adds: **WK + WTKWY** (governance / compliance software) and **IT
+> (Gartner)** as both advisory beneficiary and market-sizer ($492M→>$1B puts a dollar figure on the
+> cleanup layer). These sit in Zone 2 beside the horizontal-security and legal (TRI/RELX) names but
+> attack the *reporting / audit* layer of the force-buy.
+
 ## 7. Instruments — invariant vs variable
 
 **Invariant:** own the destination (cleanup re-rate + the gap), in non-bleeding vehicles.
