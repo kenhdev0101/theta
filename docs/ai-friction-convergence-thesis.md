@@ -385,8 +385,7 @@ AMZN (1 + 4 purest marketing-migration owner), META (1 + 4), NOW (1 + 2).
 - *Agent infra (direct):* Stripe, OpenAI (→ SoftBank proxy), Anthropic (→ GOOGL/AMZN investors),
   Profound.
 - *Security pure-plays (private or absorbed):* Zenity, Pillar, HiddenLayer, Credo AI, Lasso;
-  Lakera (→ CHKP), Oasis (→ Cyera), Protect AI (→ PANW), Koi (→ PANW), CyberArk/CYBR (public,
-  being absorbed by PANW), Robust Intelligence (→ CSCO), Galileo (→ CSCO), Arize (→ DT), Traceloop
+  Lakera (→ CHKP), Oasis (→ Cyera), Protect AI (→ PANW), Koi (→ PANW), CyberArk/CYBR (acquired by PANW, closed Feb 11 2026 — no standalone handle), Robust Intelligence (→ CSCO), Galileo (→ CSCO), Arize (→ DT), Traceloop
   (→ NOW), Pangea (→ CRWD), Prompt Security (→ S), Promptfoo (→ OpenAI), Humanloop (→ Anthropic).
 - *Observability / governance independents:* Braintrust, LangChain/LangSmith, Fiddler, Patronus,
   Collibra, Monte Carlo.
@@ -402,6 +401,238 @@ the hotel-booking "Mirai," which has no public handle).
 > Smart money is paying real money ($915M Arize, $634M Protect AI, ~$25B CyberArk) to own
 > AI-governance inventory *before* the incident — the acquirers front-running the §5 force-buy.
 > Several deal terms are single-source; confirm vs primary filings before any of them is leaned on.
+
+### Tape index additions — 2026-11-02 sweep (enterprise automation · open-web · regulated verticals)
+
+Three open lanes pulled players-first (2026-11-02). Catalogue only — no weighting. **Evidence
+honesty:** Perplexity confirmed tickers + anchor evidence for names tagged **[ev]**; the rest are
+real public handles it could not pull 2026 specifics for this pass (**[ticker ok; ev TBD]**) —
+confirm before any is leaned on.
+
+**Lane A — enterprise "agents-replace-people" (beyond CRM/NOW). Splits into two sides.**
+
+*A1. Sellers of the automation (Zone 1 extension):*
+
+| Ticker | Player | Status | Hook |
+|---|---|---|---|
+| WDAY | Workday — Autopilot HR/fin/IT agents | **[ev]** | shipped agents at Rising 2026 AND cut ~2.5% (~525) of staff — a seller cutting its own |
+| SAP | Joule agents | [ticker ok; ev TBD] | ERP agent layer |
+| INTU | Intuit — agentic finance/tax | [ticker ok; ev TBD] | |
+| TEAM | Atlassian — Rovo agents | [ticker ok; ev TBD] | |
+| PATH | UiPath — agentic RPA | [ticker ok; ev TBD] | RPA → agentic |
+| PEGA | Pegasystems — agentic workflow | [ticker ok; ev TBD] | |
+| APPN | Appian | [ticker ok; ev TBD] | |
+| NICE / FIVN / TWLO / VRNT | contact-center automation | [ticker ok; ev TBD] | agents replace call-center seats |
+
+*A2. Labor-arbitrage incumbents — the "whole department" short (NEW bucket; their P&L IS the billed headcount):*
+
+| Ticker | Player | Status | Hook |
+|---|---|---|---|
+| ACN | Accenture | **[ev]** | record Q1'26 bookings >$20B on ~flat ~786k headcount — "AI giveth and taketh"; both seller and disrupted |
+| CTSH | Cognizant | **[ev]** | scaling "frontier" engineers/operators; labor model exposed |
+| TCS (NYSE + India) | Tata Consultancy | **[ev]** | Anthropic unit, 50k licenses, time-to-deliver *discounts* (deflation showing) |
+| INFY (NYSE + India) | Infosys | [ev partial] | repricing productivity assumptions into contracts |
+| WIT (NYSE + India) | Wipro | **[ev]** | Claude Applied-AI CoE, 10k trained |
+| G | Genpact | **[ev]** | agentic K-Fabric; shift to outcome-based contracts |
+| EXLS | ExlService | **[ev]** | data+AI ~60% of rev +27% YoY; traditional Digital Operations declining |
+| CNXC | Concentrix | [ticker ok; ev TBD] | call-center BPO |
+| WNS | WNS Holdings | [confirm — reported Capgemini acquisition] | BPO |
+| TEP (Paris) | Teleperformance | [ticker ok; ev TBD] | call-center BPO, most exposed |
+
+> A2 is the essay's Billy at department scale: the business sells billed hours, and the live tell is
+> already here — bookings up on flat headcount, *time-to-deliver discounts*, and the pivot to
+> fixed-fee / outcome-based contracts (revenue-per-head compressing). Different failure condition
+> from the open-web short (A2 fails if services firms successfully reprice to value-based output),
+> which strengthens the §9 convergent-validity test.
+
+**Lane B — open-web / search-click short (refines Zone 4's embedded short).**
+
+| Ticker | Player | Status | Hook |
+|---|---|---|---|
+| CHGG | Chegg | **[ev]** | cleanest documented casualty: Q2'26 rev −51% YoY ($51.8M); 71% of homework traffic was Google (2024). Caveat: also AI cost-cutting + skilling pivot |
+| RDDT | Reddit | **[ev]** | contested two-sided: Q3'26 referrals down (AI Overviews/AI Mode), >1M/wk lost in Oct — BUT a data-licensing beneficiary |
+| GCI | Gannett | **[sector ev]** | ad-supported publisher |
+| IAC | IAC / Dotdash Meredith | **[sector ev]** | publisher portfolio (also a licensing counterpart) |
+| ZD | Ziff Davis | **[sector ev]** | publisher |
+| BZFD | BuzzFeed | **[sector ev]** | publisher |
+| FUTR (LSE) | Future plc | **[sector ev]** | publisher |
+| SSTK / GETY | Shutterstock / Getty | [ticker ok; offset] | traffic risk muddied by AI-licensing offset |
+| YELP / TRIP | Yelp / Tripadvisor | [ticker ok; intent-dep.] | local/transactional intent muddies the short |
+| TTD, PUBM, MGNI, CRTO, DV | ad-tech | [indirect] | **downgraded** — exposure is indirect (publisher inventory/budgets), not a clean organic-click short |
+
+> Sector anchor (strong): Google referrals to large publishers −43% YoY (Jun'25→Jun'26); top-100
+> publisher visits 7.0B→4.9B (Aug'24→Aug'26) [Chartbeat/EMARKETER]. Cleanest single short = CHGG;
+> cleanest basket = ad-supported publishers. No handle: WebMD, Fandom (private); Stack Overflow not
+> separately listed (parent Prosus PRX/Amsterdam, diversified — not a pure-play).
+
+**Lane C — regulated verticals (healthcare + legal): where the governance brake actually bites.**
+These matter precisely because errors are *attributable* (malpractice, sanctions) — unlike the
+consumer surface, the trust/governance force-buy (§5, Zone 2) is strongest here.
+
+*Legal — cleanest governance beneficiaries (own the trusted, must-cite source + compliance workflow):*
+
+| Ticker | Player | Status | Hook |
+|---|---|---|---|
+| TRI (NYSE + TSX) | Thomson Reuters | **[ev]** | CoCounsel + Westlaw + Practical Law — trusted incumbent + seller; the agent must cite it |
+| RELX (LSE + NYSE ADR) | RELX / LexisNexis | **[ev]** | Lexis+ AI, Protégé — same mechanism |
+| INTA | Intapp | [ticker ok; ev TBD] | professional-firm workflow / governance |
+| LZ | LegalZoom | [ticker ok] | disrupted-incumbent lean (short-ish) |
+| Harvey / Clio | private pure-plays | **[ev, no handle]** | Harvey $15.5B (Sep'26); Clio $5B + vLex + judge-AI acq — no public proxy identified |
+
+*Healthcare — ambient clinical scribing / clinical agents:*
+
+| Ticker | Player | Status | Hook |
+|---|---|---|---|
+| MSFT | Nuance / Dragon Copilot | **[ev]** | the public handle for ambient scribing (diversified) |
+| VEEV | Veeva | [ticker ok; ev TBD] | regulated life-sci workflow / governance beneficiary |
+| DOCS | Doximity | [ticker ok] | clinician network / distribution |
+| TEM | Tempus | [ticker ok] | clinical-data / AI |
+| TDOC / HIMS | Teladoc / Hims | [ticker ok] | care-delivery incumbents (adopter / disrupted) |
+| Ambience / Abridge / Suki | private pure-plays | **[ev, no handle]** | Ambience $243M (Jun'26, Cleveland Clinic 4k/6k clinicians); Abridge $300M; Suki $70M — no public proxy |
+
+> Augmedix — [no handle: taken private by Commure, 2024]. Healthcare ambient-scribe pure-plays are
+> all private; MSFT is the only clean listed seller. Legal gives the better edge-pure handles
+> (TRI/RELX) because the force-buy mechanism (sanctions/malpractice = attributable harm) is the
+> strongest in the whole map.
+
+### Tape index additions — 2026-11-02 sweep pt.2 (buildout physical layer · silicon · agent-security next tier)
+
+Catalogue only — no weighting. **Placement note up front:** Lanes D and E are largely *long the
+buildout* (capex), so they correlate with the Zone-1 crowded long — **not** our edge-pure
+long-the-gap. Catalogued for completeness; honest placement is beta/thematic with a fragility
+read, flagged per name. (One Perplexity instance misdated itself to "Feb 2026" and called valid
+Oct-2026 figures "future-dated"; those figures are current as of today and used below.)
+
+**Lane D — buildout physical layer (picks-and-shovels; paid for electrons / steel / concrete).**
+Robust to AI *productivity* being fake, but NOT to AI *capex* rolling over — so exposed to the
+Zone-3 fragility, not independent of it. Power-gen is the most robust (demand beyond AI); pure
+datacenter-construction and pre-revenue SMRs are the most capex-circular.
+
+| Ticker | Player | Bucket | Status | Hook |
+|---|---|---|---|---|
+| CEG | Constellation Energy | IPP / nuclear | public | paid-regardless (operating power); Crane/TMI restart narrative — confirm |
+| VST | Vistra | IPP | public | paid-regardless; broad generation |
+| TLN | Talen Energy | IPP | public | paid-regardless; large-load contract concentration risk |
+| NRG | NRG Energy | IPP / retail | public | paid-regardless; verify datacenter-specific exposure |
+| OKLO | Oklo | SMR | public | **pre-revenue, capex-circular** — bet on future deployment |
+| SMR | NuScale | SMR | public | **pre-revenue, capex-circular** |
+| NNE | Nano Nuclear | SMR | public | **pre-revenue, capex-circular** |
+| GEV | GE Vernova | turbines / electrification | **[ev]** | >$5B YTD datacenter orders; raised 2026 guidance |
+| ETN | Eaton | electrical | public | paid-regardless; broad end-markets |
+| ENR (Xetra) | Siemens Energy | grid / power equip | public | paid-regardless; grid exposure beyond AI |
+| VRT | Vertiv | thermal / liquid cooling | public | the cooling leader; hyperscaler-capex levered |
+| NVT | nVent | electrical connection | public | paid-regardless; broad |
+| HUBB | Hubbell | electrical infra | public | paid-regardless; broad |
+| PWR | Quanta Services | construction / eng | **[ev]** | $53.4B backlog (Jun'26) |
+| MTZ | MasTec | construction | **[ev]** | $21.4B backlog |
+| STRL | Sterling Infrastructure | construction | **[ev]** | $4.33B backlog, 92% E-Infra in datacenters/fabs — **purest DC-construction read = most capex-levered** |
+| FIX | Comfort Systems | mechanical / HVAC | public | datacenter HVAC/mechanical |
+| APG | APi Group | building services | public | broad |
+| J / FLR | Jacobs / Fluor | engineering | public | broad, project-based |
+| DLR | Digital Realty | DC REIT | **[ev]** | **circular / lease-demand** — record 2026 leasing, $2.5B signed-not-commenced backlog |
+| EQIX | Equinix | DC REIT | public | **circular / lease-demand**; colocation + interconnect |
+
+**Lane E — compute silicon (custom-ASIC / NVDA-alternative fringe).** Mostly long-the-buildout
+too, with one real thesis angle: custom hyperscaler ASICs routing *around* NVDA feed the Zone-3
+question of whether NVDA's demand is durable or circular.
+
+| Ticker | Player | Role | Status | Hook |
+|---|---|---|---|---|
+| AVGO | Broadcom | **NVDA-alternative** (custom ASIC) | **[ev]** | Google TPU + Meta MTIA + OpenAI accelerator (2H'26); 6 XPU customers |
+| MRVL | Marvell | **NVDA-alternative** (custom ASIC) | **[ev]** | Amazon Trainium + MSFT Maia; up to $11B AI-ASIC rev '26; Maia 200 deployed Jan'26 |
+| AMD | AMD | **NVDA-alternative** (merchant GPU) | public | MI400 / HBM4 (2026 ramp not established here) |
+| TSM (NYSE ADR / 2330 TW) | TSMC | **FOUNDRY / arms-dealer** | **[ev]** | cleanest "paid regardless of which chip wins"; CoWoS ~130k wafers/mo by year-end |
+| MU | Micron | NVDA-complement (HBM) | **[ev]** | HBM4 ramp; custom HBM with Nvidia |
+| 000660 (KRX) | SK Hynix | NVDA-complement (HBM) | public | HBM4; role in Nvidia Rubin |
+| 005930 (KRX) / SMSN (LSE GDR) | Samsung | NVDA-complement (HBM) | **[ev]** | HBM4 mass production Feb'26 |
+| ANET | Arista | NVDA-complement (networking) | public | AI-cluster switching — "next bottleneck is the network" |
+| CRDO | Credo | networking / interconnect | **[ev]** | +115% rev; active electrical cables |
+| ALAB | Astera Labs | interconnect | public | AI connectivity fabric |
+| COHR | Coherent | optical | **[ev]** | +59% datacom |
+| LITE | Lumentum | optical | **[ev]** | revenue >2× |
+| Cerebras / Groq / SambaNova / Tenstorrent / Etched | NVDA challengers | **NVDA-alternative; private** | **[no handle]** | no clean public proxy; Cerebras IPO status unverified |
+
+**Lane F — agent-security next tier (beyond the platform acquirers we already hold).** Extends Zone 2.
+
+| Ticker | Player | Role | Status | Hook |
+|---|---|---|---|---|
+| SAIL | SailPoint | non-human / agent identity | **[ev]** | clearest independent next-tier handle; bought Entro Security (secrets / NHI, Jun'26, reported) |
+| VRNS | Varonis | data security / governance | public | DSPM-adjacent proxy, not pure-play |
+| RBRK | Rubrik | data security / resilience | public | AI data protection; recent IPO |
+| Cyera | DSPM for AI | private | **[no handle]** | reportedly bought Oasis |
+
+> **Correction (accuracy):** CyberArk (CYBR) acquisition by PANW **closed Feb 11 2026** — no
+> standalone public handle anymore (fixed in the main index). More roll-up data points: Astrix →
+> Cisco (2026, reported), Entro → SailPoint (Jun'26). No independent public pure-play for AI-TRiSM
+> / model-runtime security survives — the category is being absorbed into the platforms, which is
+> itself the "own the acquirers" confirmation.
+
+### Tape index additions — 2026-11-02 sweep pt.3 (international · robotics · defense/govtech)
+
+Catalogue only — no weighting; capex-beta / fit tags carried through (a future weighting input,
+per desk). **Account note:** the eventual basket is held in the US cash account, so US-listed / ADR
+handles are directly holdable; home-market-only foreign listings are logged but flagged
+not-directly-tradable.
+
+**Lane G — international / China agent plays.** Splits by role: China hyperscalers are the
+crowded-capex equivalent; the commerce names are consumer-agent (Zone-4 cousins); SAP/ASML are
+enabling infra (ASML the ultimate arms-dealer).
+
+| Ticker | Player | Role | US handle? | Tag / hook |
+|---|---|---|---|---|
+| BABA | Alibaba (Qwen) | hyperscaler + commerce-agent | **ADR (NYSE)** | crowded-capex + consumer; QwenWork ~30M users (Sep), Qianwen Go! (Oct) |
+| BIDU | Baidu (Ernie) | hyperscaler + consumer-agent | **ADR (Nasdaq)** | crowded-capex; Baidu Buddy / Kuku AI |
+| TCEHY | Tencent (Hunyuan, WeChat) | hyperscaler + commerce | **ADR (OTC only)** | crowded-capex + consumer; WorkBuddy |
+| JD | JD.com | commerce-agent | **ADS (Nasdaq)** | consumer lane |
+| PDD | PDD Holdings | commerce-agent | **ADS (Nasdaq)** | consumer lane |
+| MELI | MercadoLibre (LatAm) | commerce-agent | **US-listed (Nasdaq)** | consumer lane |
+| SE | Sea Ltd (SEA) | commerce-agent | **US-listed (NYSE)** | consumer lane |
+| SAP | SAP (Joule, Autonomous Suite) | enterprise-agent seller | **ADS (NYSE)** | Zone-1 seller (dual w/ Lane A); ~400-agent '26 target |
+| ASML | ASML (lithography) | enabling infra / arms-dealer | **US-listed (Nasdaq)** | the deepest arms-dealer; crowded-capex-adjacent |
+| 3690.HK / 1024.HK / 0020.HK / 002230.SZ / 1810.HK | Meituan / Kuaishou / SenseTime / iFlytek / Xiaomi | consumer / foundation | **home-only** | logged; no US ADR → not directly tradable |
+| 035420.KS / 4755.T | Naver / Rakuten | consumer + foundation | **home-only** | logged |
+| SU.PA (OTC: SBGSY) | Schneider Electric | datacenter power (Lane-D cousin) | **OTC** | picks-and-shovels; crowded-capex |
+| ByteDance / Mistral | Doubao+Coze / Mistral | foundation-model | **[no handle — private]** | Mistral hosted on SAP; ByteDance no public proxy |
+
+**Lane H — robotics / physical AI ("agent with hands").** Honest placement: **largely a separate
+thesis** (embodied AI), not the demo-vs-load gap. The public handles are mostly crowded-capex
+mega-caps or industrial incumbents; the pure humanoid makers are private with no clean handle.
+Catalogued as the frontier, flagged adjacent-not-core.
+
+| Ticker | Player | Role | Tag |
+|---|---|---|---|
+| TSLA | Tesla (Optimus) | humanoid maker | **crowded-capex mega-cap** + robot option; Fremont line early-ramp Q3'26 (reported) |
+| NVDA | Nvidia (Isaac / GR00T) | robot-brain / compute | **crowded-capex**; the robot-brain picks-and-shovels |
+| QCOM | Qualcomm | robot-brain / edge | crowded-capex; optionality |
+| ABB (NYSE) / ROK / FANUY / SIE / 6861.T | ABB / Rockwell / Fanuc / Siemens / Keyence | industrial automation | **crowded-capex incumbents** |
+| SYM | Symbotic | warehouse automation | public picks-and-shovels (not humanoid) |
+| ZBRA | Zebra | logistics automation | enterprise-automation |
+| ISRG | Intuitive Surgical | surgical robotics | mature franchise |
+| XPEV | XPeng | auto + embodied-AI option | **ADR (NYSE)**; not a pure robot maker |
+| 9880.HK | UBTECH | humanoid maker | public frontier bet (home-only) |
+| OUST / LAZR / AEVA | Ouster / Luminar / Aeva | LiDAR / sensors | small-cap frontier suppliers |
+| Figure / Apptronik / Agility / 1X / Unitree | humanoid makers | **private** | **[no clean handle]** — proxies: Figure→NVDA (compute), Apptronik→GOOGL (backer), Boston Dynamics→Hyundai 005380.KS (parent) |
+
+**Lane I — defense / govtech cleanup.** Thesis angle: in defense/government, AI error is maximally
+*attributable* (oversight, audits, lives), so the control-plane/governance force-buy is strongest.
+Split: control-plane cleanup beneficiaries (edge-adjacent) vs defense-capex beta.
+
+| Ticker | Player | Role | Tag / hook |
+|---|---|---|---|
+| PLTR | Palantir | **AI control-plane / cleanup** | our Zone-2 horse; $618.9M Army Vantage expansion, Maven, CJADC2 |
+| TYL | Tyler Technologies | **govtech cleanup (civilian)** | clean non-defense-beta add; Resident AI Assistant live in 6 states (Indiana 17k MAU) |
+| BBAI | BigBear.ai | AI-contract small-cap | speculative; >$225M awards since Jul'26, 25+ gen-AI federal awards (FBI/NASA/USCG/DOE/VA) |
+| LMT / RTX / NOC / GD / BA | primes | incumbent AI-adopters | **defense-capex beta** |
+| AVAV / KTOS | AeroVironment / Kratos | defense-tech new guard | defense-capex beta |
+| LDOS / BAH / SAIC / CACI | gov IT services | government labor shops | **cross-link: same automation-disruption vector as Lane A2 (value = billed gov headcount)** |
+| PL / BKSY / RKLB | Planet / BlackSky / Rocket Lab | space / ISR | capex beta (BKSY: $99M IDIQ + NRO) |
+| Anduril / Shield AI / Saronic | defense-tech new guard | **private** | **[no handle]** Anduril ($20B Army counter-drone, $5B round @ $61B — IPO watch); Shield AI ($12.7B); Saronic ($9.25B) |
+
+> Cross-links worth keeping: (1) the government IT-services shops (LDOS/BAH/SAIC/CACI) are the
+> public-sector twin of the Lane-A2 labor-arbitrage short — their P&L is billed government
+> headcount. (2) Anduril is the private name most worth an IPO-watch flag. (3) Robotics is mostly a
+> *separate* thesis; keep it catalogued but out of the core gap trade unless a name earns in on its
+> own.
 
 ## 7. Instruments — invariant vs variable
 
