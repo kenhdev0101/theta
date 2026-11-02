@@ -4,7 +4,7 @@ Owner: lead developer / desk
 Agent ID: research-agent (Claude Opus 4.8)
 Scope: theta human-thesis policy family — the macro AI friction-removal / convergence thesis and its tradable expressions
 Status: DOCUMENTATION / ITERATING (candidate; pre-trade; nothing placed)
-As of: 2026-11-01 (§6 consolidated tape index + player→tape parking lots added; §1–5, §8 core as of 2026-10-30)
+As of: 2026-11-02 (§10 weighting methodology v2 specced; §6 tape index + four lane sweeps; §1–5, §8 core as of 2026-10-30)
 
 > Source narrative: "Click Twice, Wait for Jim" (@ken, 2026-10-30). This doc is the tradable
 > distillation. We are in the documentation phase: write it down, iterate, keep what survives.
@@ -753,4 +753,105 @@ crowding; cleanup re-rate still ahead.
 - [ ] Cost-stack check on cheap convex (does theta's "ETF" clear costs net? if not, no safe
   default).
 - [ ] Sizing / exit mechanism: the N-signal deterministic exit carve-out (future build; the
-  instrument floor is its first layer).
+  instrument floor is its first layer). Superseded/extended by §10 below.
+- [ ] Ratify §10 v2 weighting spec before any build (capex-term settled 2026-11-02; §10.6 items remain).
+
+## 10. Weighting methodology (v2 — pressure-tested 2026-11-02)
+
+Owner: lead developer / desk · Agent ID: research-agent (Claude Opus 4.8)
+Status: DESIGN SPEC — pressure-tested; not built, not armed, nothing traded. Capex-term settled 2026-11-02 (§10.4).
+
+The bridge from the §6 player list to a held basket. Pressure-tested against a senior
+portfolio-construction peer (scoring, weighting engine, rebalance); this is the surviving design.
+
+**Keep it minimal (design law).** The edge is the human tacit scores, not the machinery. The engine
+is deliberately four moving parts: a human score, a bounded tilt, a capped weighting, a lazy
+tax-aware rebalance. Anything fancier — Black-Litterman, mean-variance optimization, factor models,
+logistic/z-score penalties, a measured "oracle" composite — stays OUT until a live result proves the
+simple version is leaving money on the table. Overengineering is the easy failure here;
+friction-is-load-bearing applies to our own code too.
+
+### 10.1 Two human inputs (the seed)
+
+Scored by trench knowledge, never by a model (Core Architecture Law). Per name:
+
+- **`friction` (0–10)** — how un-bypassable the company is when AI cracks under load:
+
+| Score | Meaning | Trench template |
+|---|---|---|
+| 9–10 | Un-bypassable mandatory spend | Fundamental infra / audit / cleanup that MUST deploy when a system cracks under load; the architecture can't survive the gap without them. |
+| 7–8 | High-friction structural guardrail | Critical governance/security that mitigates deferred fragility, but orgs may try to bypass it during the hype/demo phase before reality hits. |
+| 4–6 | Neutral / superficial utility | Sits in the governance space but is a marketing wrapper itself; sells a checklist, doesn't fix trench-level fragility. |
+| 2–3 | High-fragility risk exposure | Core workflows / products built on demo-grade, fragile AI scaffolding; actively introducing systemic technical debt. |
+| 0–1 | Extreme fragility (the core delta) | Firing engineers because "the demo worked"; entirely long the marketing, maximal producer of future systemic failure. |
+
+- **`oracle` (0–10)** — how hard the Street already buys the company's AI-marketing narrative. Stays
+  a human score (the edge is tacit); no measured composite is built unless the simple score proves
+  unreliable.
+
+### 10.2 Score (bounded — friction leads)
+
+```
+score = friction × (1 − 0.5 · oracle/10)
+```
+
+- The **napkin inverse** `10/(oracle+0.1)` is rejected: it gave ignored names up to a ~100×
+  multiplier, ranking low-friction/ignored above high-friction/covered (inverting our thesis) and
+  rewarding illiquid obscurity (fighting the liquidity gate).
+- The oracle term is a **bounded discount** (max consensus shaves ≤50%, never flips a 10 below a 2):
+  contrarianism tilts, it can't dominate.
+- **Crowding is NOT in the score** (settled 2026-11-02). Conviction lives here (friction +
+  contrarian tilt); crowding / correlation is a portfolio constraint, handled by the crowded-capex
+  bucket cap in 10.4. Keeping them separate avoids double-counting and keeps the score about one
+  thing — how much we believe the name.
+
+Sanity check, not a subsystem: eyeball whether a ±1-point score change swings a name's weight a lot
+— if so it's noise, size it down.
+
+### 10.3 Pipeline
+
+```
+§6 catalogue → liquidity/handle gate → conviction selection → score → capped weighting → hold/rebalance
+```
+
+1. **Gate.** Drop no-handle / private; require > $5M/day dollar volume; US-listed / ADR only (cash
+   account).
+2. **Select — forced, not optional.** Feasibility needs `N·floor ≤ 1 ≤ N·cap`; at floor 2% / cap
+   20%, **N ∈ [5, 50]**. The 130-name catalogue can't be held (130 × 2% = 260%). Cut to ~40–50 by
+   conviction first; the floor is a *selection* rule, never inside the weight loop (it oscillates
+   there).
+3. **Score.** Per 10.2, on the kept set only (excluded names leave the denominator).
+4. **Weight.** Capped water-fill: `w = min(cap, μ · score)`, μ set so Σw = 1 (standard capped-index
+   math — solve directly, not a hand-rolled loop). Then group caps (10.4).
+5. **Hold / rebalance.** Per 10.5.
+
+### 10.4 Caps (the only risk control we start with)
+
+- **Single-name cap** (~20%), and a **min trade size** instead of a hard weight floor (a floor
+  forces capital into the weakest names and breaks feasibility).
+- **Zone cap** — our §6 zones *are* the sectors; cap each so one correlated bucket can't become the
+  book. (The lanes are our poor-man's covariance; no correlation matrix.)
+- **Crowded-capex bucket cap (settled 2026-11-02).** Cap the portfolio's crowded exposure:
+  `Σ(capex_beta_i · w_i) ≤ ~20%` (tunable down), where `capex_beta ∈ {0 edge-pure, 0.5 mixed,
+  1 crowded}` from the §6 tag — edge-pure contributes nothing, mixed counts half. One constraint,
+  same family as the zone caps. Chosen over a score discount (don't double-count crowding) and over
+  doing both (don't overengineer): the cap directly bounds the risk we actually care about — the
+  basket quietly becoming the crowded consensus long.
+- Monitor effective-N. That's it — add more only if a live result demands it.
+
+### 10.5 Rebalance (taxable cash account, hold mandate)
+
+- **Drift is an alert, not an auto-reset.** `Σ|w − w_target| > 0.10` → review, don't "trade back to
+  target" (that realizes gains the hold mandate exists to defer). Fill underweights with new cash /
+  dividends first.
+- **Asymmetric** — don't trim a winner for being over target (that sells strength); trim only at the
+  hard cap (back to a buffer, e.g. 18%, not to target), a thesis break, or a risk limit.
+- **Tax-lot aware** (tax drag = a §5 bleed): specific-lot ID, sell long-term / highest-basis first,
+  avoid short-term gains, no wash-sale rebuy inside the 30-day window.
+
+### 10.6 Open before build / arm
+
+- [x] **Capex term — SETTLED 2026-11-02:** crowded-capex bucket cap (§10.4), not a score discount. (Lead may veto.)
+- [ ] Selection rule (top-N by score? a hard friction floor, e.g. keep ≥ 7?).
+- [ ] Placeholders to set: cap 20% / min trade size / drift 0.10 / buffer 18% / oracle λ 0.5.
+- [ ] Rater protocol for `friction` / `oracle` (written anchors, score independently).
