@@ -34,6 +34,20 @@ mandatory spend.
 - **Why it survives being written down:** tacit knowledge does not transfer on the page. The
   market can read this document and still not hold the fuse-length feel, so publication does not
   arbitrage it away. The explicit argument is free; the tacit read is the moat.
+- **The enthusiast–doom divide IS the mispricing (added 2026-11-02).** Both loud camps argue about
+  *raw* inference and miss the trench middle:
+  - *Enthusiasts:* "AI is awesome — I have 17 agents running 24/7." (Long the marketing; rung-1
+    maximalists.)
+  - *Doom / naysayers:* "look how dumb it is, it can't even spell strawberry." (Short the capability.)
+  - *The silent middle (the edge):* you give the model **a tool that spells strawberry** (the
+    grounding / connector layer) **and a verification step on the output** (the governance / check —
+    "click twice, wait for Jim"). The friction — the tool and the check — is the load-bearing part
+    neither camp prices.
+
+  This is the captured oracle made concrete: the two loudest interpreters are split between hype and
+  mockery of *raw* inference, and the quiet operators who know the fix (tool + verify) have no
+  megaphone. The example maps the basket exactly — the **tool** = grounding (§6 rung 2), the
+  **verification** = governance / cleanup (§6 rung 3). We are long both.
 
 ## 3. Policy-family placement
 
@@ -117,6 +131,33 @@ own them through public platforms:
 Antifragile: the worse AI underperforms, the wider the promise-vs-reality gap, and the gap is
 exactly what governance is bought to paper over. This is the instrument that monetizes our
 specific tacit edge.
+
+**The grounding / vendor-stamp layer — the pre-governance stage (added 2026-11-02).** There is an
+*earlier* play in the same arc, *before* the incident-driven governance force-buy: the vendors who
+feed the raw model the structured, proprietary business context so its output is trustworthy enough
+to act on — the "vendor stamp" that makes AI output load-bearing. Key timing edge: this monetizes
+**now**, not waiting for the §5 incident, so it may be better-timed than the cleanup re-rate. It is
+also where the MCP-connector land-grab (the first players-first instruction: "who's frothing to plug
+into the model") meets the cleanup thesis — being the governed-context layer the model reaches into.
+
+**The maturity ladder (trench read, 2026-11-02):** (1) *raw inference* — slap on a connector, run
+raw prompts, no real grounding; **most orgs are still here**; (2) *grounding / vendor-stamp* — the
+Datarails / ontology layer; early, low adoption, monetizing now; (3) *full governance / cleanup* —
+incident-gated, later (the Zone 2 destination). Two consequences: the grounding play has a long
+runway but thin current incidence — **keep it eligible; trigger = the adoption inflection, the "raw
+inference wall" moment orgs are forced off stage 1**. And because most orgs are stuck at stage 1,
+the demo-vs-load gap is at its *widest* right now, which **banks the eventual Zone-2 force-buy** —
+the more primitive today's adoption, the bigger the cleanup bid later. (This is *why* the §8 stats —
+McKinsey 6% high-performers, MIT ~95% no return — read so bad: raw inference without grounding.)
+
+- **Dated signal:** Datarails (private FP&A; FinanceOS bolts "your chart of accounts + custom
+  business logic" onto Claude → "board-ready models"; paid IG ad 2026-11-02: *"Claude is powerful,
+  but finance needs structure"*). A vendor selling the gap directly — demo ≠ load in ad copy.
+- **Public expression:** PLTR (ontology = the governed-context stamp) is the cleanest; SNOW / MDB
+  (data grounding) and WDAY Adaptive adjacent. Private pure-plays — Datarails, Vena, Pigment, Cube —
+  no handle.
+- **Weighting note (not scored here):** these are earlier-cycle / already-monetizing vs the
+  incident-gated cleanup crew — a friction/timing nuance to weigh when scoring, not a new axis.
 
 ### Zone 3 — The fragility / the gap
 
