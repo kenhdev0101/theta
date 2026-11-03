@@ -153,11 +153,25 @@ McKinsey 6% high-performers, MIT ~95% no return — read so bad: raw inference w
 - **Dated signal:** Datarails (private FP&A; FinanceOS bolts "your chart of accounts + custom
   business logic" onto Claude → "board-ready models"; paid IG ad 2026-11-02: *"Claude is powerful,
   but finance needs structure"*). A vendor selling the gap directly — demo ≠ load in ad copy.
-- **Public expression:** PLTR (ontology = the governed-context stamp) is the cleanest; SNOW / MDB
-  (data grounding) and WDAY Adaptive adjacent. Private pure-plays — Datarails, Vena, Pigment, Cube —
-  no handle.
+- **Public expression (tape sweep 2026-11-02):** PLTR (ontology = the governed-context stamp)
+  cleanest; grounding infra **ESTC** (Elastic, vector/RAG), **CFLT** (Confluent, real-time context),
+  SNOW/MDB (Cortex/vector), **TDC** (Teradata, lead); connector platforms shipping MCP *now* — CRM
+  (MuleSoft), SAP (MCP Gateway), WDAY (Adaptive MCP Server), VEEV (life-sci); the *verify* leg is all
+  names we already hold (DDOG/DT/NOW/CSCO). Pure-plays — Datarails, Databricks, dbt, Pinecone, Vena,
+  Pigment — private (Databricks the marquee IPO-watch). Flags: BASE (Couchbase) reportedly taken
+  private 2025 — verify; INFA → CRM (deal-dependent).
 - **Weighting note (not scored here):** these are earlier-cycle / already-monetizing vs the
   incident-gated cleanup crew — a friction/timing nuance to weigh when scoring, not a new axis.
+
+**The irony — the fix is an accelerant (trench read, 2026-11-02).** The grounding / vendor-stamp
+layer is exactly the "one more harness tweak" the sharp is incentivized to sell — the step *before*
+the buzzsaw. And it *feeds* the buzzsaw: orgs add a few tools, get confident about the happy paths
+they can now see work, and put *even more* on autopilot — while the tail / edge-case fragility the
+grounding didn't fix keeps compounding. So rung-2 is not in tension with rung-3; it **underwrites**
+it. Owning both = long the whole cycle — sell the tweak now, sell the cleanup later. (The essay's
+"sharp you pay to cut the fat" becoming the accelerant, not the brake.) **Scoring consequence:** the
+harness / grounding sellers deserve a friction bump — several were scored on their hype-seller face
+and missed their un-bypassable, monetizing-now harness role.
 
 ### Zone 3 — The fragility / the gap
 
