@@ -305,6 +305,7 @@ return [
         'enabled' => false,
         'armed' => false,
         'active_event_id' => null,
+        'per_day_max_debit' => null, // Null inherits the account allocation cap; explicit desk override is basket-only.
         'weights_path' => base_path('docs/weighting-basket.csv'),
         'strategy_label' => 'theta_basket_etf',
         'buy_threshold_usd' => 1.0,

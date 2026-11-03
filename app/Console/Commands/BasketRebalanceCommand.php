@@ -66,6 +66,9 @@ class BasketRebalanceCommand extends Command
     {
         $cfg = $this->assembleConfig();
         $basket = (array) ($cfg['basket'] ?? []);
+        if (isset($basket['per_day_max_debit'])) {
+            $cfg['allocation']['per_day_max_debit'] = (float) $basket['per_day_max_debit'];
+        }
         $fundingSource = (string) ($basket['funding_source'] ?? 'settled_cash');
         $arm = (bool) $this->option('arm') && ! $this->option('dry-run');
         if ($arm && ($this->option('fixture') !== null || $this->option('weights') !== null)) {

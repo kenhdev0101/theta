@@ -243,6 +243,25 @@ class BasketRebalanceCommandTest extends TestCase
         $this->assertSame('settled_cash', $event->notes['funding_source']);
     }
 
+    public function test_explicit_basket_daily_cap_override_leaves_other_strategies_unchanged(): void
+    {
+        $this->cash = 117.08;
+        $this->buyingPower = 317.08;
+        config()->set('harness.basket.funding_source', 'broker_buying_power');
+        config()->set('harness.basket.weights_path', base_path('docs/weighting-basket.csv'));
+        config()->set('harness.basket.per_day_max_debit', 275);
+        config()->set('harness.basket.max_open_positions', 39);
+        config()->set('harness.basket.max_orders_per_tick', 39);
+        $event = $this->preview();
+        $this->assertGreaterThan(200, (float) $event->gross_buys_usd);
+        $this->assertLessThanOrEqual(275, (float) $event->gross_buys_usd);
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertCount(39, $this->placed);
+        $this->assertEqualsWithDelta((float) $event->gross_buys_usd, array_sum(array_column($this->placed, 'dollar_amount')), .001);
+        $this->assertSame(200, config('harness.allocation.per_day_max_debit'));
+        $this->assertSame(50, config('harness.allocation.per_play_max_debit'));
+    }
+
     public function test_shared_execution_lock_defers_without_broker_reads(): void
     {
         $release = ConvexLoopLock::acquire();
