@@ -1,39 +1,39 @@
 rank,ticker,name,lane,capex_beta,handle,score,weight_pct
-1,MURGY,Munich Re,AI-insurance,0,OTC,6.8,3.63
-2,TRI,Thomson Reuters,Legal gov,0,public,6.0,3.2
-3,RELX,RELX,Legal gov,0,ADR,6.0,3.2
-4,WTKWY,Wolters Kluwer,Governance SW,0,OTC,5.95,3.18
-5,CHKP,Check Point,Z2 cleanup,0,public,5.6,2.99
-6,FFIV,F5,Z2 cleanup,0,public,5.6,2.99
-7,SAIL,SailPoint,Z2 cleanup,0,public,5.6,2.99
-8,VRNS,Varonis,Z2 cleanup,0,public,5.6,2.99
-9,VEEV,Veeva,Health gov,0,public,5.6,2.99
-10,TYL,Tyler Technologies,Govtech cleanup,0,public,5.6,2.99
-11,WK,Workiva,Governance SW,0,public,5.6,2.99
-12,OKTA,Okta,Z2 cleanup,0,public,5.25,2.8
-13,IBM,IBM,Z2 cleanup,0.5,public,5.25,2.8
-14,CRWD,CrowdStrike,Z2 cleanup,0,public,5.2,2.78
-15,PANW,Palo Alto Networks,Z2 cleanup,0,public,5.2,2.78
-16,DT,Dynatrace,Z2 cleanup,0,public,4.9,2.62
-17,ZS,Zscaler,Z2 cleanup,0,public,4.9,2.62
-18,S,SentinelOne,Z2 cleanup,0,public,4.9,2.62
-19,MDB,MongoDB,Z2 cleanup,0,public,4.9,2.62
-20,RBRK,Rubrik,Z2 cleanup,0,public,4.9,2.62
-21,INTA,Intapp,Legal gov,0,public,4.8,2.56
-22,NOW,ServiceNow,Z1 seller,0.5,public,4.55,2.43
-23,DDOG,Datadog,Z2 cleanup,0,public,4.55,2.43
-24,SNOW,Snowflake,Z2 cleanup,0,public,4.55,2.43
-25,PLTR,Palantir,Z2 cleanup,0.5,public,4.5,2.4
-26,CSCO,Cisco,Z2 cleanup,0,public,4.5,2.4
-27,SSREY,Swiss Re,Reinsurer,0,OTC,4.5,2.4
-28,IT,Gartner,Advisory,0,public,4.5,2.4
-29,ESTC,Elastic,Grounding infra,0,public,4.5,2.4
-30,CFLT,Confluent,Grounding infra,0,public,4.5,2.4
-31,MMC,Marsh McLennan,Broker,0,public,4.25,2.27
-32,AON,Aon,Broker,0,public,4.25,2.27
-33,FORR,Forrester,Advisory,0,public,4.25,2.27
-34,VRSK,Verisk,Risk analytics,0,public,4.25,2.27
-35,ICE,Intercontinental Exchange,Pred-mkt,0,public,4.0,2.14
-36,BBAI,BigBear.ai,Govtech AI,0,public,3.9,2.08
-37,ASML,ASML,Silicon foundry-equip,1,public,3.9,2.08
-38,WDAY,Workday,Grounding/seller,0.5,public,3.75,2.0
+1,MURGY,Munich Re,AI-insurance,0,OTC,6.8,3.67
+2,TYL,Tyler Technologies,Govtech cleanup,0,public,6.4,3.45
+3,SAIL,SailPoint,Z2 cleanup,0,public,6.0,3.23
+4,TRI,Thomson Reuters,Legal gov,0,public,6.0,3.23
+5,RELX,RELX,Legal gov,0,ADR,6.0,3.23
+6,WTKWY,Wolters Kluwer,Governance SW,0,OTC,5.95,3.21
+7,VRNS,Varonis,Z2 cleanup,0,public,5.6,3.02
+8,VEEV,Veeva,Health gov,0,public,5.6,3.02
+9,WK,Workiva,Governance SW,0,public,5.6,3.02
+10,ZS,Zscaler,Z2 cleanup,0,public,5.6,3.02
+11,RBRK,Rubrik,Z2 cleanup,0,public,5.6,3.02
+12,FFIV,F5,Z2 cleanup,0,public,5.25,2.83
+13,PANW,Palo Alto Networks,Z2 cleanup,0,public,5.2,2.8
+14,VRSK,Verisk,Risk analytics,0,public,5.1,2.75
+15,DT,Dynatrace,Z2 cleanup,0,public,4.9,2.64
+16,SNOW,Snowflake,Z2 cleanup,0,public,4.9,2.64
+17,INTA,Intapp,Legal gov,0,public,4.8,2.59
+18,CRWD,CrowdStrike,Z2 cleanup,0,public,4.8,2.59
+19,NOW,ServiceNow,Z1 seller,0.5,public,4.55,2.45
+20,PLTR,Palantir,Z2 cleanup,0.5,public,4.5,2.43
+21,S,SentinelOne,Z2 cleanup,0,public,4.5,2.43
+22,OKTA,Okta,Z2 cleanup,0,public,4.5,2.43
+23,IBM,IBM,Z2 cleanup,0.5,public,4.5,2.43
+24,SSREY,Swiss Re,Reinsurer,0,OTC,4.5,2.43
+25,IT,Gartner,Advisory,0,public,4.5,2.43
+26,ESTC,Elastic,Grounding infra,0,public,4.5,2.43
+27,CFLT,Confluent,Grounding infra,0,public,4.5,2.43
+28,CACI,CACI,Gov IT,0,public,4.25,2.29
+29,MMC,Marsh McLennan,Broker,0,public,4.25,2.29
+30,AON,Aon,Broker,0,public,4.25,2.29
+31,FORR,Forrester,Advisory,0,public,4.25,2.29
+32,BR,Broadridge,FinServ SW,0,public,4.25,2.29
+33,DDOG,Datadog,Z2 cleanup,0,public,4.2,2.26
+34,CHKP,Check Point,Z2 cleanup,0,public,4.0,2.16
+35,ICE,Intercontinental Exchange,Pred-mkt,0,public,4.0,2.16
+36,ASML,ASML,Silicon foundry-equip,1,public,3.9,2.1
+37,HUBS,HubSpot,Z4 AEO,0,public,3.75,2.02
+38,WDAY,Workday,Grounding/seller,0.5,public,3.75,2.02

@@ -1,198 +1,198 @@
 rank,ticker,name,lane,capex_beta,handle,friction,oracle,score
 1,MURGY,Munich Re,AI-insurance,0,OTC,8,3,6.8
-2,TRI,Thomson Reuters,Legal gov,0,public,8,5,6.0
-3,RELX,RELX,Legal gov,0,ADR,8,5,6.0
-4,WTKWY,Wolters Kluwer,Governance SW,0,OTC,7,3,5.95
-5,CHKP,Check Point,Z2 cleanup,0,public,7,4,5.6
-6,FFIV,F5,Z2 cleanup,0,public,7,4,5.6
-7,SAIL,SailPoint,Z2 cleanup,0,public,7,4,5.6
+2,TYL,Tyler Technologies,Govtech cleanup,0,public,8,4,6.4
+3,SAIL,SailPoint,Z2 cleanup,0,public,8,5,6.0
+4,TRI,Thomson Reuters,Legal gov,0,public,8,5,6.0
+5,RELX,RELX,Legal gov,0,ADR,8,5,6.0
+6,WTKWY,Wolters Kluwer,Governance SW,0,OTC,7,3,5.95
+7,ZS,Zscaler,Z2 cleanup,0,public,8,6,5.6
 8,VRNS,Varonis,Z2 cleanup,0,public,7,4,5.6
-9,VEEV,Veeva,Health gov,0,public,7,4,5.6
-10,TYL,Tyler Technologies,Govtech cleanup,0,public,7,4,5.6
+9,RBRK,Rubrik,Z2 cleanup,0,public,8,6,5.6
+10,VEEV,Veeva,Health gov,0,public,7,4,5.6
 11,WK,Workiva,Governance SW,0,public,7,4,5.6
-12,OKTA,Okta,Z2 cleanup,0,public,7,5,5.25
-13,IBM,IBM,Z2 cleanup,0.5,public,7,5,5.25
-14,CRWD,CrowdStrike,Z2 cleanup,0,public,8,7,5.2
-15,PANW,Palo Alto Networks,Z2 cleanup,0,public,8,7,5.2
-16,DT,Dynatrace,Z2 cleanup,0,public,7,6,4.9
-17,ZS,Zscaler,Z2 cleanup,0,public,7,6,4.9
-18,S,SentinelOne,Z2 cleanup,0,public,7,6,4.9
-19,MDB,MongoDB,Z2 cleanup,0,public,7,6,4.9
-20,RBRK,Rubrik,Z2 cleanup,0,public,7,6,4.9
-21,INTA,Intapp,Legal gov,0,public,6,4,4.8
-22,NOW,ServiceNow,Z1 seller,0.5,public,7,7,4.55
-23,DDOG,Datadog,Z2 cleanup,0,public,7,7,4.55
-24,SNOW,Snowflake,Z2 cleanup,0,public,7,7,4.55
-25,PLTR,Palantir,Z2 cleanup,0.5,public,9,10,4.5
-26,CSCO,Cisco,Z2 cleanup,0,public,6,5,4.5
-27,SSREY,Swiss Re,Reinsurer,0,OTC,5,2,4.5
-28,IT,Gartner,Advisory,0,public,6,5,4.5
-29,ESTC,Elastic,Grounding infra,0,public,6,5,4.5
-30,CFLT,Confluent,Grounding infra,0,public,6,5,4.5
-31,BEZ,Beazley,Cyber carrier,0,home-only,5,3,4.25
-32,MMC,Marsh McLennan,Broker,0,public,5,3,4.25
-33,AON,Aon,Broker,0,public,5,3,4.25
-34,FORR,Forrester,Advisory,0,public,5,3,4.25
-35,VRSK,Verisk,Risk analytics,0,public,5,3,4.25
+12,FFIV,F5,Z2 cleanup,0,public,7,5,5.25
+13,PANW,Palo Alto Networks,Z2 cleanup,0,public,8,7,5.2
+14,VRSK,Verisk,Risk analytics,0,public,6,3,5.1
+15,DT,Dynatrace,Z2 cleanup,0,public,7,6,4.9
+16,SNOW,Snowflake,Z2 cleanup,0,public,7,6,4.9
+17,CRWD,CrowdStrike,Z2 cleanup,0,public,8,8,4.8
+18,INTA,Intapp,Legal gov,0,public,6,4,4.8
+19,NOW,ServiceNow,Z1 seller,0.5,public,7,7,4.55
+20,PLTR,Palantir,Z2 cleanup,0.5,public,9,10,4.5
+21,S,SentinelOne,Z2 cleanup,0,public,6,5,4.5
+22,OKTA,Okta,Z2 cleanup,0,public,6,5,4.5
+23,IBM,IBM,Z2 cleanup,0.5,public,6,5,4.5
+24,SSREY,Swiss Re,Reinsurer,0,OTC,5,2,4.5
+25,IT,Gartner,Advisory,0,public,6,5,4.5
+26,ESTC,Elastic,Grounding infra,0,public,6,5,4.5
+27,CFLT,Confluent,Grounding infra,0,public,6,5,4.5
+28,CACI,CACI,Gov IT,0,public,5,3,4.25
+29,BEZ,Beazley,Cyber carrier,0,home-only,5,3,4.25
+30,MMC,Marsh McLennan,Broker,0,public,5,3,4.25
+31,AON,Aon,Broker,0,public,5,3,4.25
+32,FORR,Forrester,Advisory,0,public,5,3,4.25
+33,BR,Broadridge,FinServ SW,0,public,5,3,4.25
+34,DDOG,Datadog,Z2 cleanup,0,public,7,8,4.2
+35,CHKP,Check Point,Z2 cleanup,0,public,5,4,4.0
 36,ICE,Intercontinental Exchange,Pred-mkt,0,public,5,4,4.0
-37,BBAI,BigBear.ai,Govtech AI,0,public,6,7,3.9
-38,ASML,ASML,Silicon foundry-equip,1,public,6,7,3.9
-39,V,Visa,Z4 toll,0,public,5,5,3.75
-40,MA,Mastercard,Z4 toll,0,public,5,5,3.75
-41,HUBS,HubSpot,Z4 AEO,0,public,5,5,3.75
-42,WDAY,Workday,Grounding/seller,0.5,public,5,5,3.75
-43,RNR,RenaissanceRe,Reinsurer,0,public,4,2,3.6
-44,EG,Everest Group,Reinsurer,0,public,4,2,3.6
-45,AJG,Arthur J Gallagher,Broker,0,public,4,2,3.6
-46,WTW,Willis Towers Watson,Broker,0,public,4,2,3.6
-47,CB,Chubb,P&C carrier,0,public,4,2,3.6
-48,TRV,Travelers,P&C carrier,0,public,4,2,3.6
-49,HSX,Hiscox,Cyber carrier,0,home-only,4,2,3.6
-50,CBZ,CBIZ,Accounting,0,public,4,2,3.6
-51,RGP,Resources Connection,Consulting,0,public,4,2,3.6
-52,SAP,SAP,Z1 seller,0.5,ADR,5,6,3.5
-53,SHOP,Shopify,Z4 toll,0,public,5,6,3.5
-54,ADBE,Adobe,Z4 AEO,0,public,5,6,3.5
-55,AMS,Amadeus,Travel,0,home-only,4,3,3.4
-56,LDOS,Leidos,Gov IT,0,public,4,3,3.4
-57,BAH,Booz Allen,Gov IT,0,public,4,3,3.4
-58,SAIC,SAIC,Gov IT,0,public,4,3,3.4
-59,CACI,CACI,Gov IT,0,public,4,3,3.4
-60,SSNC,SS&C,FinServ SW,0,public,4,3,3.4
-61,BR,Broadridge,FinServ SW,0,public,4,3,3.4
-62,TDC,Teradata,Grounding infra,0,public,4,3,3.4
-63,DV,DoubleVerify,Ad-tech,0,public,4,4,3.2
-64,DOCS,Doximity,Health,0,public,4,4,3.2
-65,LMT,Lockheed Martin,Defense prime,0.5,public,4,4,3.2
-66,RTX,RTX,Defense prime,0.5,public,4,4,3.2
-67,NOC,Northrop Grumman,Defense prime,0.5,public,4,4,3.2
-68,GD,General Dynamics,Defense prime,0.5,public,4,4,3.2
-69,ISRG,Intuitive Surgical,Surgical robotics,0,public,4,4,3.2
-70,ITRI,Itron,Grid edge,0.5,public,4,4,3.2
-71,GNRC,Generac,Backup/DR,0.5,public,4,4,3.2
-72,DASH,DoorDash,Food,0,public,4,5,3.0
-73,UBER,Uber,Food,0,public,4,5,3.0
-74,NRG,NRG Energy,Buildout power,0.5,public,4,5,3.0
-75,EQIX,Equinix,DC REIT,1,public,4,5,3.0
-76,TSM,TSMC,Silicon foundry,1,ADR,5,8,3.0
-77,AVAV,AeroVironment,Defense-tech,0.5,public,4,5,3.0
-78,MELI,MercadoLibre,Intl commerce,0,public,4,5,3.0
-79,CRM,Salesforce,Z1 seller,0.5,public,4,6,2.8
-80,KTOS,Kratos,Defense-tech,0.5,public,4,6,2.8
-81,SABR,Sabre,Travel,0,public,3,2,2.7
-82,AIG,AIG,P&C carrier,0,public,3,2,2.7
-83,TEM,Tempus,Health,0,public,4,7,2.6
-84,HOOD,Robinhood,Pred-mkt,0,public,4,7,2.6
-85,CEG,Constellation Energy,Buildout power,0.5,public,4,7,2.6
-86,VST,Vistra,Buildout power,0.5,public,4,7,2.6
-87,GEV,GE Vernova,Buildout power,1,public,4,7,2.6
-88,CCJ,Cameco,Nuclear fuel,0.5,public,4,7,2.6
-89,IAC,IAC,Open-web short,0,public,3,3,2.55
-90,ZD,Ziff Davis,Open-web short,0,public,3,3,2.55
-91,YELP,Yelp,Open-web short,0,public,3,3,2.55
-92,TRIP,Tripadvisor,Open-web short,0,public,3,3,2.55
-93,PUBM,PubMatic,Ad-tech,0,public,3,3,2.55
-94,MGNI,Magnite,Ad-tech,0,public,3,3,2.55
-95,CRTO,Criteo,Ad-tech,0,public,3,3,2.55
-96,TDOC,Teladoc,Health disrupted,0,public,3,3,2.55
-97,IGG,IG Group,Pred-mkt,0,home-only,3,3,2.55
-98,FANUY,Fanuc,Industrial auto,0.5,OTC,3,3,2.55
-99,6861,Keyence,Industrial auto,0.5,home-only,3,3,2.55
-100,ZBRA,Zebra,Logistics auto,0,public,3,3,2.55
-101,4755,Rakuten,Intl consumer,0,home-only,3,3,2.55
-102,VRNT,Verint,Z1 seller,0.5,public,3,4,2.4
-103,SSTK,Shutterstock,Open-web short,0,public,3,4,2.4
-104,GETY,Getty Images,Open-web short,0,public,3,4,2.4
-105,LZ,LegalZoom,Legal disrupted,0,public,3,4,2.4
-106,DKNG,DraftKings,Pred-mkt,0,public,3,4,2.4
-107,FLUT,Flutter,Pred-mkt,0,public,3,4,2.4
-108,EXPE,Expedia,Travel,0,public,3,4,2.4
-109,APG,APi Group,Buildout services,0.5,public,3,4,2.4
-110,J,Jacobs,Buildout engineering,0.5,public,3,4,2.4
-111,FLR,Fluor,Buildout engineering,0.5,public,3,4,2.4
-112,BA,Boeing,Defense prime,0.5,public,3,4,2.4
-113,ABB,ABB,Industrial auto,0.5,ADR,3,4,2.4
-114,ROK,Rockwell,Industrial auto,0.5,public,3,4,2.4
-115,SIE,Siemens,Industrial auto,0.5,home-only,3,4,2.4
-116,JD,JD.com,Intl commerce,0,ADR,3,4,2.4
-117,3690,Meituan,Intl consumer,0,home-only,3,4,2.4
-118,1024,Kuaishou,Intl consumer,0,home-only,3,4,2.4
-119,035420,Naver,Intl foundation,0.5,home-only,3,4,2.4
-120,JCI,Johnson Controls,DC HVAC,0.5,public,3,4,2.4
-121,INTU,Intuit,Z1 seller,0.5,public,3,5,2.25
-122,PEGA,Pegasystems,Z1 seller,0.5,public,3,5,2.25
-123,APPN,Appian,Z1 seller,0.5,public,3,5,2.25
-124,NICE,NICE,Z1 seller,0.5,ADR,3,5,2.25
-125,FIVN,Five9,Z1 seller,0.5,public,3,5,2.25
-126,TWLO,Twilio,Z1 seller,0.5,public,3,5,2.25
-127,ACN,Accenture,Labor-arb short,0,public,3,5,2.25
-128,TTD,The Trade Desk,Z4 short,0,public,3,5,2.25
-129,BULL,Webull,Pred-mkt,0,public,3,5,2.25
-130,SMT,Scottish Mortgage,Private-AI vehicle,0.5,home-only,3,5,2.25
-131,BKNG,Booking,Travel,0,public,3,5,2.25
-132,ENR,Siemens Energy,Buildout power,0.5,home-only,3,5,2.25
-133,NVT,nVent,Buildout electrical,0.5,public,3,5,2.25
-134,HUBB,Hubbell,Buildout electrical,0.5,public,3,5,2.25
-135,MTZ,MasTec,Buildout construction,1,public,3,5,2.25
-136,FIX,Comfort Systems,Buildout HVAC,0.5,public,3,5,2.25
-137,005930,Samsung Electronics,Silicon HBM,0.5,home-only,3,5,2.25
-138,PL,Planet Labs,Space ISR,0.5,public,3,5,2.25
-139,BKSY,BlackSky,Space ISR,0.5,public,3,5,2.25
-140,QCOM,Qualcomm,Robotics brain,1,public,3,5,2.25
-141,BIDU,Baidu,Intl hyperscaler,1,ADR,3,5,2.25
-142,PDD,PDD Holdings,Intl commerce,0,ADR,3,5,2.25
-143,002230,iFlytek,Intl foundation,1,home-only,3,5,2.25
-144,1810,Xiaomi,Intl consumer,0.5,home-only,3,5,2.25
-145,SBGSY,Schneider Electric,Buildout power,0.5,OTC,3,5,2.25
-146,MYRG,MYR Group,Grid construction,0.5,public,3,5,2.25
-147,FLNC,Fluence,Grid storage,0.5,public,3,5,2.25
-148,TEAM,Atlassian,Z1 seller,0.5,public,3,6,2.1
-149,RDDT,Reddit,Open-web short,0,public,3,6,2.1
-150,HIMS,Hims & Hers,Health,0,public,3,6,2.1
-151,ARKVX,ARK Venture,Private-AI vehicle,0.5,fund,3,6,2.1
-152,ETN,Eaton,Buildout electrical,0.5,public,3,6,2.1
-153,PWR,Quanta Services,Buildout construction,1,public,3,6,2.1
-154,STRL,Sterling Infrastructure,Buildout construction,1,public,3,6,2.1
-155,DLR,Digital Realty,DC REIT,1,public,3,6,2.1
-156,000660,SK Hynix,Silicon HBM,0.5,home-only,3,6,2.1
-157,COHR,Coherent,Silicon optical,0.5,public,3,6,2.1
-158,LITE,Lumentum,Silicon optical,0.5,public,3,6,2.1
-159,RKLB,Rocket Lab,Space,0.5,public,3,6,2.1
-160,SYM,Symbotic,Warehouse auto,0,public,3,6,2.1
-161,XPEV,XPeng,Robotics/auto,0.5,ADR,3,6,2.1
-162,9880,UBTECH,Humanoid,0.5,home-only,3,6,2.1
-163,BABA,Alibaba,Intl hyperscaler,1,ADR,3,6,2.1
-164,TCEHY,Tencent,Intl hyperscaler,1,OTC,3,6,2.1
-165,SE,Sea Ltd,Intl commerce,0,public,3,6,2.1
-166,UEC,Uranium Energy,Nuclear fuel,0.5,public,3,6,2.1
-167,GOOGL,Alphabet,Z1 dream,1,public,3,7,1.95
-168,META,Meta,Z1 dream,1,public,3,7,1.95
-169,AMZN,Amazon,Z1 dream,1,public,3,7,1.95
-170,SFTBY,SoftBank Group,Private-AI proxy,0.5,OTC,3,7,1.95
-171,DXYZ,Destiny Tech100,Private-AI vehicle,0.5,public,3,7,1.95
-172,MU,Micron,Silicon HBM,1,public,3,7,1.95
-173,CRDO,Credo,Silicon interconnect,0.5,public,3,7,1.95
-174,BE,Bloom Energy,Energy power,1,public,3,7,1.95
-175,LEU,Centrus Energy,Nuclear fuel,0.5,public,3,7,1.95
-176,MSFT,Microsoft,Z1 dream,1,public,3,8,1.8
-177,CHGG,Chegg,Open-web short,0,public,2,2,1.8
-178,GCI,Gannett,Open-web short,0,public,2,2,1.8
-179,FUTR,Future plc,Open-web short,0,home-only,2,2,1.8
-180,TLN,Talen Energy,Buildout power,0.5,public,3,8,1.8
-181,VRT,Vertiv,Buildout cooling,1,public,3,8,1.8
-182,MRVL,Marvell,Silicon ASIC,1,public,3,8,1.8
-183,AMD,AMD,Silicon GPU,1,public,3,8,1.8
-184,ANET,Arista,Silicon networking,1,public,3,8,1.8
-185,ALAB,Astera Labs,Silicon interconnect,0.5,public,3,8,1.8
-186,WNS,WNS Holdings,Labor-arb short,0,public,2,3,1.7
-187,STEM,Stem,Grid storage,0.5,public,2,3,1.7
-188,AVGO,Broadcom,Silicon ASIC,1,public,3,9,1.65
-189,CTSH,Cognizant,Labor-arb short,0,public,2,4,1.6
-190,TCS,Tata Consultancy,Labor-arb short,0,home-only,2,4,1.6
-191,INFY,Infosys,Labor-arb short,0,ADR,2,4,1.6
-192,WIT,Wipro,Labor-arb short,0,ADR,2,4,1.6
-193,G,Genpact,Labor-arb short,0,public,2,4,1.6
-194,EXLS,ExlService,Labor-arb short,0,public,2,4,1.6
+37,ASML,ASML,Silicon foundry-equip,1,public,6,7,3.9
+38,V,Visa,Z4 toll,0,public,5,5,3.75
+39,MA,Mastercard,Z4 toll,0,public,5,5,3.75
+40,HUBS,HubSpot,Z4 AEO,0,public,5,5,3.75
+41,WDAY,Workday,Grounding/seller,0.5,public,5,5,3.75
+42,RNR,RenaissanceRe,Reinsurer,0,public,4,2,3.6
+43,EG,Everest Group,Reinsurer,0,public,4,2,3.6
+44,AJG,Arthur J Gallagher,Broker,0,public,4,2,3.6
+45,WTW,Willis Towers Watson,Broker,0,public,4,2,3.6
+46,CB,Chubb,P&C carrier,0,public,4,2,3.6
+47,TRV,Travelers,P&C carrier,0,public,4,2,3.6
+48,HSX,Hiscox,Cyber carrier,0,home-only,4,2,3.6
+49,RGP,Resources Connection,Consulting,0,public,4,2,3.6
+50,SAP,SAP,Z1 seller,0.5,ADR,5,6,3.5
+51,CSCO,Cisco,Z2 cleanup,0.5,public,5,6,3.5
+52,SHOP,Shopify,Z4 toll,0,public,5,6,3.5
+53,ADBE,Adobe,Z4 AEO,0,public,5,6,3.5
+54,AMS,Amadeus,Travel,0,home-only,4,3,3.4
+55,LDOS,Leidos,Gov IT,0,public,4,3,3.4
+56,SSNC,SS&C,FinServ SW,0,public,4,3,3.4
+57,TDC,Teradata,Grounding infra,0,public,4,3,3.4
+58,DV,DoubleVerify,Ad-tech,0,public,4,4,3.2
+59,DOCS,Doximity,Health,0,public,4,4,3.2
+60,LMT,Lockheed Martin,Defense prime,0.5,public,4,4,3.2
+61,RTX,RTX,Defense prime,0.5,public,4,4,3.2
+62,NOC,Northrop Grumman,Defense prime,0.5,public,4,4,3.2
+63,GD,General Dynamics,Defense prime,0.5,public,4,4,3.2
+64,ISRG,Intuitive Surgical,Surgical robotics,0,public,4,4,3.2
+65,ITRI,Itron,Grid edge,0.5,public,4,4,3.2
+66,GNRC,Generac,Backup/DR,0.5,public,4,4,3.2
+67,MDB,MongoDB,Z2 cleanup,0,public,4,5,3.0
+68,DASH,DoorDash,Food,0,public,4,5,3.0
+69,UBER,Uber,Food,0,public,4,5,3.0
+70,NRG,NRG Energy,Buildout power,0.5,public,4,5,3.0
+71,EQIX,Equinix,DC REIT,1,public,4,5,3.0
+72,TSM,TSMC,Silicon foundry,1,ADR,5,8,3.0
+73,AVAV,AeroVironment,Defense-tech,0.5,public,4,5,3.0
+74,MELI,MercadoLibre,Intl commerce,0,public,4,5,3.0
+75,CRM,Salesforce,Z1 seller,0.5,public,4,6,2.8
+76,KTOS,Kratos,Defense-tech,0.5,public,4,6,2.8
+77,SABR,Sabre,Travel,0,public,3,2,2.7
+78,AIG,AIG,P&C carrier,0,public,3,2,2.7
+79,CBZ,CBIZ,Accounting,0,public,3,2,2.7
+80,TEM,Tempus,Health,0,public,4,7,2.6
+81,HOOD,Robinhood,Pred-mkt,0,public,4,7,2.6
+82,CEG,Constellation Energy,Buildout power,0.5,public,4,7,2.6
+83,VST,Vistra,Buildout power,0.5,public,4,7,2.6
+84,GEV,GE Vernova,Buildout power,1,public,4,7,2.6
+85,CCJ,Cameco,Nuclear fuel,0.5,public,4,7,2.6
+86,IAC,IAC,Open-web short,0,public,3,3,2.55
+87,ZD,Ziff Davis,Open-web short,0,public,3,3,2.55
+88,YELP,Yelp,Open-web short,0,public,3,3,2.55
+89,TRIP,Tripadvisor,Open-web short,0,public,3,3,2.55
+90,PUBM,PubMatic,Ad-tech,0,public,3,3,2.55
+91,MGNI,Magnite,Ad-tech,0,public,3,3,2.55
+92,CRTO,Criteo,Ad-tech,0,public,3,3,2.55
+93,TDOC,Teladoc,Health disrupted,0,public,3,3,2.55
+94,IGG,IG Group,Pred-mkt,0,home-only,3,3,2.55
+95,BAH,Booz Allen,Gov IT,0,public,3,3,2.55
+96,SAIC,SAIC,Gov IT,0,public,3,3,2.55
+97,FANUY,Fanuc,Industrial auto,0.5,OTC,3,3,2.55
+98,6861,Keyence,Industrial auto,0.5,home-only,3,3,2.55
+99,ZBRA,Zebra,Logistics auto,0,public,3,3,2.55
+100,4755,Rakuten,Intl consumer,0,home-only,3,3,2.55
+101,VRNT,Verint,Z1 seller,0.5,public,3,4,2.4
+102,SSTK,Shutterstock,Open-web short,0,public,3,4,2.4
+103,GETY,Getty Images,Open-web short,0,public,3,4,2.4
+104,DKNG,DraftKings,Pred-mkt,0,public,3,4,2.4
+105,FLUT,Flutter,Pred-mkt,0,public,3,4,2.4
+106,EXPE,Expedia,Travel,0,public,3,4,2.4
+107,APG,APi Group,Buildout services,0.5,public,3,4,2.4
+108,J,Jacobs,Buildout engineering,0.5,public,3,4,2.4
+109,FLR,Fluor,Buildout engineering,0.5,public,3,4,2.4
+110,BA,Boeing,Defense prime,0.5,public,3,4,2.4
+111,ABB,ABB,Industrial auto,0.5,ADR,3,4,2.4
+112,ROK,Rockwell,Industrial auto,0.5,public,3,4,2.4
+113,SIE,Siemens,Industrial auto,0.5,home-only,3,4,2.4
+114,JD,JD.com,Intl commerce,0,ADR,3,4,2.4
+115,3690,Meituan,Intl consumer,0,home-only,3,4,2.4
+116,1024,Kuaishou,Intl consumer,0,home-only,3,4,2.4
+117,035420,Naver,Intl foundation,0.5,home-only,3,4,2.4
+118,JCI,Johnson Controls,DC HVAC,0.5,public,3,4,2.4
+119,INTU,Intuit,Z1 seller,0.5,public,3,5,2.25
+120,PEGA,Pegasystems,Z1 seller,0.5,public,3,5,2.25
+121,APPN,Appian,Z1 seller,0.5,public,3,5,2.25
+122,NICE,NICE,Z1 seller,0.5,ADR,3,5,2.25
+123,FIVN,Five9,Z1 seller,0.5,public,3,5,2.25
+124,TWLO,Twilio,Z1 seller,0.5,public,3,5,2.25
+125,ACN,Accenture,Labor-arb short,0,public,3,5,2.25
+126,TTD,The Trade Desk,Z4 short,0,public,3,5,2.25
+127,BULL,Webull,Pred-mkt,0,public,3,5,2.25
+128,SMT,Scottish Mortgage,Private-AI vehicle,0.5,home-only,3,5,2.25
+129,BKNG,Booking,Travel,0,public,3,5,2.25
+130,ENR,Siemens Energy,Buildout power,0.5,home-only,3,5,2.25
+131,NVT,nVent,Buildout electrical,0.5,public,3,5,2.25
+132,HUBB,Hubbell,Buildout electrical,0.5,public,3,5,2.25
+133,MTZ,MasTec,Buildout construction,1,public,3,5,2.25
+134,FIX,Comfort Systems,Buildout HVAC,0.5,public,3,5,2.25
+135,005930,Samsung Electronics,Silicon HBM,0.5,home-only,3,5,2.25
+136,PL,Planet Labs,Space ISR,0.5,public,3,5,2.25
+137,BKSY,BlackSky,Space ISR,0.5,public,3,5,2.25
+138,QCOM,Qualcomm,Robotics brain,1,public,3,5,2.25
+139,BIDU,Baidu,Intl hyperscaler,1,ADR,3,5,2.25
+140,PDD,PDD Holdings,Intl commerce,0,ADR,3,5,2.25
+141,002230,iFlytek,Intl foundation,1,home-only,3,5,2.25
+142,1810,Xiaomi,Intl consumer,0.5,home-only,3,5,2.25
+143,SBGSY,Schneider Electric,Buildout power,0.5,OTC,3,5,2.25
+144,MYRG,MYR Group,Grid construction,0.5,public,3,5,2.25
+145,FLNC,Fluence,Grid storage,0.5,public,3,5,2.25
+146,TEAM,Atlassian,Z1 seller,0.5,public,3,6,2.1
+147,RDDT,Reddit,Open-web short,0,public,3,6,2.1
+148,HIMS,Hims & Hers,Health,0,public,3,6,2.1
+149,ARKVX,ARK Venture,Private-AI vehicle,0.5,fund,3,6,2.1
+150,ETN,Eaton,Buildout electrical,0.5,public,3,6,2.1
+151,PWR,Quanta Services,Buildout construction,1,public,3,6,2.1
+152,STRL,Sterling Infrastructure,Buildout construction,1,public,3,6,2.1
+153,DLR,Digital Realty,DC REIT,1,public,3,6,2.1
+154,000660,SK Hynix,Silicon HBM,0.5,home-only,3,6,2.1
+155,COHR,Coherent,Silicon optical,0.5,public,3,6,2.1
+156,LITE,Lumentum,Silicon optical,0.5,public,3,6,2.1
+157,RKLB,Rocket Lab,Space,0.5,public,3,6,2.1
+158,SYM,Symbotic,Warehouse auto,0,public,3,6,2.1
+159,XPEV,XPeng,Robotics/auto,0.5,ADR,3,6,2.1
+160,9880,UBTECH,Humanoid,0.5,home-only,3,6,2.1
+161,BABA,Alibaba,Intl hyperscaler,1,ADR,3,6,2.1
+162,TCEHY,Tencent,Intl hyperscaler,1,OTC,3,6,2.1
+163,SE,Sea Ltd,Intl commerce,0,public,3,6,2.1
+164,UEC,Uranium Energy,Nuclear fuel,0.5,public,3,6,2.1
+165,GOOGL,Alphabet,Z1 dream,1,public,3,7,1.95
+166,META,Meta,Z1 dream,1,public,3,7,1.95
+167,AMZN,Amazon,Z1 dream,1,public,3,7,1.95
+168,SFTBY,SoftBank Group,Private-AI proxy,0.5,OTC,3,7,1.95
+169,DXYZ,Destiny Tech100,Private-AI vehicle,0.5,public,3,7,1.95
+170,MU,Micron,Silicon HBM,1,public,3,7,1.95
+171,CRDO,Credo,Silicon interconnect,0.5,public,3,7,1.95
+172,BBAI,BigBear.ai,Govtech AI,0,public,3,7,1.95
+173,BE,Bloom Energy,Energy power,1,public,3,7,1.95
+174,LEU,Centrus Energy,Nuclear fuel,0.5,public,3,7,1.95
+175,MSFT,Microsoft,Z1 dream,1,public,3,8,1.8
+176,CHGG,Chegg,Open-web short,0,public,2,2,1.8
+177,GCI,Gannett,Open-web short,0,public,2,2,1.8
+178,FUTR,Future plc,Open-web short,0,home-only,2,2,1.8
+179,TLN,Talen Energy,Buildout power,0.5,public,3,8,1.8
+180,VRT,Vertiv,Buildout cooling,1,public,3,8,1.8
+181,MRVL,Marvell,Silicon ASIC,1,public,3,8,1.8
+182,AMD,AMD,Silicon GPU,1,public,3,8,1.8
+183,ANET,Arista,Silicon networking,1,public,3,8,1.8
+184,ALAB,Astera Labs,Silicon interconnect,0.5,public,3,8,1.8
+185,WNS,WNS Holdings,Labor-arb short,0,public,2,3,1.7
+186,STEM,Stem,Grid storage,0.5,public,2,3,1.7
+187,AVGO,Broadcom,Silicon ASIC,1,public,3,9,1.65
+188,CTSH,Cognizant,Labor-arb short,0,public,2,4,1.6
+189,TCS,Tata Consultancy,Labor-arb short,0,home-only,2,4,1.6
+190,INFY,Infosys,Labor-arb short,0,ADR,2,4,1.6
+191,WIT,Wipro,Labor-arb short,0,ADR,2,4,1.6
+192,G,Genpact,Labor-arb short,0,public,2,4,1.6
+193,EXLS,ExlService,Labor-arb short,0,public,2,4,1.6
+194,LZ,LegalZoom,Legal disrupted,0,public,2,4,1.6
 195,PATH,UiPath,Z1 seller,0.5,public,2,6,1.4
 196,0020,SenseTime,Intl foundation,1,home-only,2,6,1.4
 197,NNE,Nano Nuclear,Buildout SMR,1,public,2,7,1.3
