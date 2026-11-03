@@ -16,24 +16,50 @@ use Illuminate\Support\Str;
  * Robinhood review/place/cancel tools with explicit operator confirmation.
  *
  * @property int $id
+ * @property string|null $account_number
  * @property string|null $client_ref_id
  * @property string|null $broker_order_id
  * @property string $asset_class
  * @property string $symbol
+ * @property string|null $underlying_symbol
  * @property string $status
+ * @property string|null $intent
  * @property string|null $side
  * @property string|null $position_effect
  * @property string|null $chain_id
  * @property string|null $option_id
+ * @property string|null $option_type
+ * @property Carbon|null $expiration_date
+ * @property string|null $strike_price
+ * @property string|null $order_type
+ * @property string|null $time_in_force
+ * @property string|null $market_hours
  * @property string|null $dollar_amount
  * @property string|null $quantity
  * @property string|null $limit_price
+ * @property string|null $stop_price
+ * @property string|null $review_estimated_cost
+ * @property string|null $average_fill_price
+ * @property string|null $filled_quantity
+ * @property string|null $strategy_label
+ * @property string|null $structure_class
+ * @property int|null $thesis_intent_id
+ * @property string|null $thesis
+ * @property string|null $invalidation
+ * @property array|null $scanner_payload
+ * @property array|null $option_math_payload
+ * @property array|null $review_payload
  * @property array|null $broker_payload
  * @property array|null $notes
- * @property Carbon|null $created_at
+ * @property Carbon|null $watchlisted_at
+ * @property Carbon|null $reviewed_at
+ * @property Carbon|null $submitted_at
  * @property Carbon|null $filled_at
  * @property Carbon|null $closed_at
  * @property string|null $realized_pnl
+ * @property string|null $unrealized_pnl
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  */
 class RobinhoodTradeJournal extends Model
 {
@@ -67,6 +93,7 @@ class RobinhoodTradeJournal extends Model
         'filled_quantity',
         'strategy_label',
         'structure_class',
+        'thesis_intent_id',
         'relative_strength_state',
         'gap_classification',
         'trend_geometry_state',
@@ -103,6 +130,7 @@ class RobinhoodTradeJournal extends Model
             'filled_quantity' => 'decimal:8',
             'days_until_earnings' => 'integer',
             'days_since_earnings' => 'integer',
+            'thesis_intent_id' => 'integer',
             'scanner_payload' => 'array',
             'option_math_payload' => 'array',
             'review_payload' => 'array',

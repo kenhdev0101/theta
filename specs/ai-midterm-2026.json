@@ -1,0 +1,55 @@
+{
+  "spec_version": "1",
+  "thesis_id": "ai-midterm-2026",
+  "owner": "horizon",
+  "agent_id": "claude/theta-opus-20261005",
+  "thesis": "AI-adjacent tech moves into the Nov 3 2026 midterms regardless of outcome; the options market prices almost no premium for a catalyst window that also contains the mega-cap earnings wall. Durable long-equity core expresses the continuation/relief case; a long-put option leg carries the throw/correlation-spike hedge.",
+  "catalyst": "2026 US midterms (Nov 3) + mega-cap AI earnings wall (Oct 28 - Nov 6)",
+  "catalyst_window": { "start": "2026-10-20", "end": "2026-11-20" },
+  "legs": [
+    {
+      "leg_id": "qqq-core",
+      "asset_class": "equity",
+      "symbol": "QQQ",
+      "direction": "long",
+      "sizing": { "mode": "balance_fraction", "fraction": 0.30, "max_usd": 6.00 },
+      "entry": { "type": "marketable_limit", "offset_bps": 10, "max_chase_bps": 50 },
+      "invalidation": {
+        "price_stop": 690.0,
+        "time_stop": "2026-11-20",
+        "target_pct": 15.0,
+        "thesis_stop": "QQQ term-structure event kink builds past ~1 vol and then rolls over"
+      }
+    },
+    {
+      "leg_id": "smh-beta",
+      "asset_class": "equity",
+      "symbol": "SMH",
+      "direction": "long",
+      "sizing": { "mode": "notional", "target_usd": 4.00, "max_usd": 5.00 },
+      "entry": { "type": "marketable_limit", "offset_bps": 10, "max_chase_bps": 50 },
+      "invalidation": {
+        "price_stop": 560.0,
+        "time_stop": "2026-11-20",
+        "target_pct": 20.0,
+        "thesis_stop": "semis lead a correlated AI-complex breakdown"
+      }
+    },
+    {
+      "leg_id": "igv-throw",
+      "asset_class": "option",
+      "symbol": "IGV",
+      "direction": "long",
+      "structure": "single_leg_long_put",
+      "dte": { "min": 30, "max": 70 },
+      "sizing": { "mode": "notional", "target_usd": 450.0, "max_usd": 500.0 },
+      "entry": { "type": "marketable_limit", "offset_bps": 0, "max_chase_bps": 150 },
+      "invalidation": {
+        "price_stop": 112.0,
+        "time_stop": "2026-11-20",
+        "target_pct": 60.0,
+        "thesis_stop": "software froth unwinds into the catalyst window (the throw)"
+      }
+    }
+  ]
+}

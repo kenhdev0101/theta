@@ -53,3 +53,55 @@ Schedule::command('theta:convex-ingest')
     ->between('9:30', '16:00')
     ->withoutOverlapping(10)
     ->runInBackground();
+
+// The optional thesis lane is installed without changing this box's live
+// Convex posture. Registration requires its explicit configuration gate.
+if ((bool) config('harness.thesis.enabled', false)) {
+    // Thesis-position lane. Registration is unconditional: both commands
+    // self-disarm when harness.thesis.enabled is false, matching the scalp lane's
+    // pattern. Neither reads harness.mode — the lane is approval-first by
+    // construction (activating a ThesisIntent is the operator's approval).
+    //
+    // Pre-open assembly derives contracts and limits against live quotes ~45 min
+    // ahead of the open, so the operator never has to be awake for the derivation.
+    Schedule::command('theta:thesis-assemble')
+        ->weekdays()
+        ->timezone('America/New_York')
+        ->dailyAt('8:45')
+        ->withoutOverlapping();
+
+    // Post-open fallback. Options do not trade pre-open, so whether Robinhood
+    // serves a usable option quote at 08:45 ET is unmeasured; if it returns no
+    // bid/ask, the 08:45 tick skips with a named reason and the day has no slate
+    // at all. Assembly is idempotent (hasLivePlay + hasLivePlayForUnderlying), so
+    // a second tick just after the bell is a no-op on a normal day and the safety
+    // net on an abnormal one. The 08:45 run stays authoritative — it is the one
+    // that leaves the operator a pre-open window to act on what it derived.
+    Schedule::command('theta:thesis-assemble')
+        ->weekdays()
+        ->timezone('America/New_York')
+        ->dailyAt('9:31')
+        ->withoutOverlapping();
+
+    // Open executor: works the entry from the bell through the window close
+    // (harness.thesis.entry.window_close_et, default 10:15 ET), then sweeps.
+    //
+    // COUPLED TO harness.thesis.entry.window_close_et. These bounds are mirrored
+    // in ThesisLaneConfig::SCHEDULE_OPEN_ET / SCHEDULE_SWEEP_CLOSE_ET, which clamp
+    // a configured close that would land past this sweep window — otherwise a
+    // resting gfd entry order gets zero cancel ticks and rests until 16:00.
+    // Change the cron and those constants together, never one alone.
+    //
+    // withoutOverlapping only guards the scheduler against itself; a manual
+    // `artisan theta:thesis-execute` can still run alongside a tick, which is why
+    // the command holds its own atomic claim over the cancel-then-replace path.
+    Schedule::command('theta:thesis-execute')
+        ->weekdays()
+        ->timezone('America/New_York')
+        ->everyMinute()
+        ->between('9:30', '10:20')
+        ->withoutOverlapping();
+
+    Schedule::command('theta:option-reconcile --strategy=thesis_position')
+        ->weekdays()->everyMinute()->withoutOverlapping();
+}

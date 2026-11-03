@@ -17,6 +17,7 @@ use App\Robinhood\Options\OptionRailPipeline;
 use App\Robinhood\Rails\SessionClock;
 use App\Robinhood\Telemetry\JsonlRecorder;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Scheduled option autopilot. It consumes complete option intents from the
@@ -183,7 +184,7 @@ class OptionAutopilotCommand extends Command
 
             if ($result['classification'] === 'LIVE_POSTED_NOT_FILLED') {
                 $placed++;
-                $baseContext = $this->applySubmittedIntentToContext($baseContext ?? [], $intent, $result);
+                $baseContext = $this->applySubmittedIntentToContext($baseContext, $intent, $result);
             } else {
                 $blocked++;
                 if ($row->refresh()->status === 'autopilot_claimed') {
@@ -234,13 +235,19 @@ class OptionAutopilotCommand extends Command
         return $context;
     }
 
-    /** @return \Illuminate\Database\Eloquent\Collection<int, RobinhoodTradeJournal> */
+    /** @return Collection<int, RobinhoodTradeJournal> */
     private function eligibleRows(array $cfg, array $statuses)
     {
         $limit = max(1, min((int) $this->option('limit'), (int) ($cfg['options']['max_open_positions'] ?? 4)));
 
         return RobinhoodTradeJournal::query()
             ->where('asset_class', 'option')
+            // HARD LANE BOUNDARY. Thesis-position plays are owned end to end by
+            // theta:thesis-execute — entry window, chase cap, verified-cancel
+            // re-peg. This autopilot runs every minute all session with none of
+            // that discipline, and --status is operator-supplied, so the
+            // boundary has to be code rather than a status-naming convention.
+            ->whereNull('thesis_intent_id')
             ->whereIn('status', $statuses)
             ->where(function ($query) use ($cfg): void {
                 $query->whereNull('account_number')

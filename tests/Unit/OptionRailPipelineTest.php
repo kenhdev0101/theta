@@ -322,6 +322,46 @@ class OptionRailPipelineTest extends TestCase
         $this->assertContains('marketability:buy_limit_below_live_ask', $verdict->blockReasons());
     }
 
+    public function test_passive_buy_mode_allows_a_mid_limit_that_the_marketable_mode_blocks(): void
+    {
+        // The thesis lane works an entry inside the book rather than lifting
+        // the ask. Same intent, two contracts: marketable blocks, passive
+        // allows.
+        $intent = $this->intent(['limitPrice' => 0.50]);
+
+        $marketable = $this->pipeline->evaluate($intent, $this->cfg(), $this->context(), includeReview: false);
+        $this->assertSame(OptionRailPipeline::BLOCK_PRICE, $marketable->verdict());
+        $this->assertContains('marketability:buy_limit_below_live_ask', $marketable->blockReasons());
+
+        $passive = $this->pipeline->evaluate($intent, $this->cfg(), $this->context(), includeReview: false, requireMarketableBuy: false);
+        $this->assertSame(OptionRailVerdict::ALLOW, $passive->verdict(), implode(', ', $passive->blockReasons()));
+    }
+
+    public function test_passive_buy_mode_blocks_a_limit_outside_the_live_book(): void
+    {
+        // Passive mode bounds the price from BOTH sides — an upper bound the
+        // marketable contract never applies.
+        $belowBid = $this->pipeline->evaluate(
+            $this->intent(['limitPrice' => 0.30]),
+            $this->cfg(),
+            $this->context(),
+            includeReview: false,
+            requireMarketableBuy: false,
+        );
+        $this->assertSame(OptionRailPipeline::BLOCK_PRICE, $belowBid->verdict());
+        $this->assertContains('marketability:passive_buy_limit_below_live_bid', $belowBid->blockReasons());
+
+        $aboveAsk = $this->pipeline->evaluate(
+            $this->intent(['limitPrice' => 0.60]),
+            $this->cfg(),
+            $this->context(),
+            includeReview: false,
+            requireMarketableBuy: false,
+        );
+        $this->assertSame(OptionRailPipeline::BLOCK_PRICE, $aboveAsk->verdict());
+        $this->assertContains('marketability:passive_buy_limit_above_live_ask', $aboveAsk->blockReasons());
+    }
+
     public function test_sell_limit_above_live_bid_blocks_as_unmarketable(): void
     {
         $verdict = $this->evaluate(
