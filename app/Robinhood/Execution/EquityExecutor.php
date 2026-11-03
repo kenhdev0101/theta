@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Robinhood\Execution;
 
 use App\Models\RobinhoodTradeJournal;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
+use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
+use App\Robinhood\Rails\RailVerdict;
 use App\Robinhood\Telemetry\JsonlRecorder;
 
 /**
@@ -32,8 +35,11 @@ final class EquityExecutor
      */
     public function execute(OrderIntent $intent, array $context = []): array
     {
+        // Mandatory executor boundary: callers cannot omit this protection
+        // with a custom rail list or a supplied broker-context snapshot.
+        $ownership = (new TacitEquityOwnership)->evaluate($intent, $this->cfg);
         // Programmatic pre-trade review unless the caller already holds one.
-        if (! array_key_exists('review', $context)) {
+        if ($ownership->ok && ! array_key_exists('review', $context)) {
             $context['review'] = $this->safeReview($intent);
         }
 
@@ -46,7 +52,10 @@ final class EquityExecutor
             'broker_order_id' => $ref->broker_order_id,
         ];
 
-        $verdict = $this->rails->evaluate($intent, $this->cfg, $context);
+        $verdict = new RailVerdict($intent, [
+            $ownership,
+            ...$this->rails->evaluate($intent, $this->cfg, $context)->results,
+        ]);
 
         if (! $verdict->allowed()) {
             $journal = $this->journal($intent, $ref->client_ref_id, 'risk_aborted', [
@@ -73,27 +82,37 @@ final class EquityExecutor
 
         $order = $this->orderPayload($intent);
 
+        if ($intent->logicalOrderId !== null) {
+            $ref->forceFill(['status' => 'submitting'])->save();
+        }
         try {
             $placement = $this->client->placeEquityOrder($order, $ref->client_ref_id);
+        } catch (BrokerCreditExhausted $e) {
+            $ref->forceFill(['status' => 'reserved'])->save();
+            throw $e;
         } catch (\Throwable $e) {
-            $this->refs->markFailed($ref, $e->getMessage());
+            $this->refs->markFailed($ref, class_basename($e));
 
             $journal = $this->journal($intent, $ref->client_ref_id, 'rejected', [
                 'rail_verdict' => $verdict->toArray(),
-                'placement_error' => $e->getMessage(),
+                'placement_error' => class_basename($e),
             ]);
 
             $this->telemetry->record('execution', [
                 'event' => 'place_failed',
                 'client_ref_id' => $ref->client_ref_id,
                 'symbol' => strtoupper($intent->symbol),
-                'error' => $e->getMessage(),
+                'error' => class_basename($e),
                 'journal_id' => $journal->id,
             ]);
 
             throw $e;
         }
 
+        $placement = PortfolioReader::unwrap($placement);
+        if (is_array($placement['order'] ?? null)) {
+            $placement = $placement['order'];
+        }
         $brokerOrderId = $placement['order_id'] ?? $placement['id'] ?? null;
         $this->refs->markPlaced($ref, is_string($brokerOrderId) ? $brokerOrderId : null);
 
@@ -173,10 +192,12 @@ final class EquityExecutor
     private function safeReview(OrderIntent $intent): array
     {
         try {
-            return $this->client->reviewEquityOrder($this->orderPayload($intent));
+            return PortfolioReader::unwrap($this->client->reviewEquityOrder($this->orderPayload($intent)));
+        } catch (BrokerCreditExhausted $e) {
+            throw $e;
         } catch (\Throwable $e) {
             // A failed review is a block (review_rejected), never a pass-through.
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'error' => class_basename($e)];
         }
     }
 
@@ -198,8 +219,8 @@ final class EquityExecutor
                 'dollar_amount' => $intent->dollarAmount,
                 'limit_price' => $intent->limitPrice,
                 'stop_price' => $intent->stopPrice,
-                'strategy_label' => 'theta_equity_probe',
-                'scanner_payload' => ['intent_source' => $intent->source],
+                'strategy_label' => $intent->strategyLabel,
+                'scanner_payload' => ['intent_source' => $intent->source, 'logical_order_id' => $intent->logicalOrderId, 'strategy_metadata' => $intent->metadata],
                 'notes' => $notes,
             ], $extra),
         );

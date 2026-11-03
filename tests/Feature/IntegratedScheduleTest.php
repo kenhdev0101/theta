@@ -36,6 +36,19 @@ final class IntegratedScheduleTest extends TestCase
         }
     }
 
+    public function test_basket_schedule_is_separate_from_options_thesis(): void
+    {
+        config()->set('harness.thesis.enabled', false);
+        config()->set('harness.basket.enabled', true);
+        $schedule = new Scheduler('UTC');
+        Schedule::swap($schedule);
+        require base_path('routes/console.php');
+        $commands = array_map(static fn ($event): string => (string) $event->command, $schedule->events());
+        $this->assertCount(5, $commands);
+        $this->assertCount(1, array_filter($commands, static fn ($command): bool => str_contains($command, 'theta:basket-rebalance --arm --trigger=scheduled')));
+        $this->assertCount(0, array_filter($commands, static fn ($command): bool => str_contains($command, 'theta:thesis-')));
+    }
+
     public static function thesisPostures(): array
     {
         return ['production posture' => [false], 'explicit thesis opt-in' => [true]];

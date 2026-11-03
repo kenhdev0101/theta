@@ -300,4 +300,19 @@ return [
         'grant_warn_hours' => (int) env('HARNESS_MONITOR_GRANT_WARN_HOURS', 24),
         'snapshot_stale_seconds' => (int) env('HARNESS_MONITOR_SNAPSHOT_STALE_SECONDS', 180),
     ],
+    'basket' => [
+        'funding_source' => 'settled_cash', // Explicit desk opt-in: broker_buying_power for this basket only.
+        'enabled' => false,
+        'armed' => false,
+        'active_event_id' => null,
+        'per_day_max_debit' => null, // Null inherits the account allocation cap; explicit desk override is basket-only.
+        'weights_path' => base_path('docs/weighting-basket.csv'),
+        'strategy_label' => 'theta_basket_etf',
+        'buy_threshold_usd' => 1.0,
+        'min_leg_notional_usd' => 1.0,
+        'max_open_positions' => 8,
+        'max_orders_per_tick' => 5,
+        'owner' => 'desk',
+        'agent_id' => 'codex/root',
+    ],
 ];

@@ -75,10 +75,11 @@ class RobinhoodMcpClient
         ]);
     }
 
-    public function getEquityPositions(): array
+    public function getEquityPositions(array $filters = []): array
     {
         return $this->call('get_equity_positions', [
             'account_number' => $this->agenticAccount,
+            ...array_intersect_key($filters, array_flip(['cursor'])),
         ]);
     }
 
@@ -89,6 +90,17 @@ class RobinhoodMcpClient
             'account_number' => $this->agenticAccount,
             'placed_agent' => 'agentic',
         ], $filters));
+    }
+
+    /** Whole pinned-account orders for cash/exposure; no ownership adoption. */
+    public function getAllEquityOrders(array $filters = []): array
+    {
+        return $this->call('get_equity_orders', ['account_number' => $this->agenticAccount, ...array_intersect_key($filters, array_flip(['cursor']))]);
+    }
+
+    public function getAllOptionOrders(array $filters = []): array
+    {
+        return $this->call('get_option_orders', ['account_number' => $this->agenticAccount, ...array_intersect_key($filters, array_flip(['cursor']))]);
     }
 
     // ── Market/control reads (not the scanner firehose) ─────────────────

@@ -933,7 +933,7 @@ Sanity check, not a subsystem: eyeball whether a ±1-point score change swings a
 ## 11. Live expression — the harness is the ETF wrapper
 
 Owner: lead developer / desk · Agent ID: research-agent (Claude Opus 4.8)
-Status: DESIGN SPEC — not built, not armed, nothing traded. The §10 weights are the product; this is how we *hold* them.
+Status: Initial buy-only basket v1 is deployed and armed as of 2026-11-03. The §10 weights remain the product. See [the runtime contract](basket-v1-runtime.md) for the implemented scope, current funding rules, and remaining automation boundaries; live order and fill truth resides in the rebalance ledger.
 
 **Robinhood has no build-your-own-ETF** (confirmed against Robinhood's own docs, 2026-11-02:
 fractional/dollar shares yes, recurring buys into one ticker yes, recurring across multiple coins
