@@ -25,6 +25,10 @@ class BasketRebalanceCommandTest extends TestCase
 
     private float $cash = 100;
 
+    private ?float $buyingPower = null;
+
+    private ?float $unleveraged = null;
+
     private bool $fills = false;
 
     private ?string $placeError = null;
@@ -54,7 +58,7 @@ class BasketRebalanceCommandTest extends TestCase
             $tool = $payload['params']['name'];
             $args = $payload['params']['arguments'];
             $body = match ($tool) {
-                'get_portfolio' => ['settled_cash' => $this->cash],
+                'get_portfolio' => ['settled_cash' => $this->cash, 'buying_power' => ['buying_power' => $this->buyingPower ?? $this->cash, 'unleveraged_buying_power' => $this->unleveraged ?? $this->buyingPower ?? $this->cash]],
                 'get_equity_positions' => ['positions' => $this->positions],
                 'get_equity_orders' => ['orders' => array_map(fn ($row) => ['id' => $row['order_id'], 'ref_id' => $row['ref_id'], 'symbol' => $row['symbol'], 'side' => 'buy', 'state' => $this->fills ? 'filled' : 'queued', 'cumulative_quantity' => $this->fills ? (float) $row['dollar_amount'] / 10 : 0, 'average_price' => $this->fills ? 10 : null], $this->placed)],
                 'get_option_orders' => ['orders' => []],
@@ -205,6 +209,40 @@ class BasketRebalanceCommandTest extends TestCase
         $this->assertCount(0, $this->placed);
     }
 
+    public function test_authorized_buying_power_includes_pending_deposit_without_relabeling_settled_cash(): void
+    {
+        $this->cash = 117.08;
+        $this->buyingPower = 317.08;
+        config()->set('harness.basket.funding_source', 'broker_buying_power');
+        $event = $this->preview();
+        // Three test names each hit the unchanged $50 order cap.
+        $this->assertEquals(150, $event->gross_buys_usd);
+        $this->assertEquals(117.08, $event->settled_cash_before);
+        $this->assertEquals(317.08, $event->notes['broker_buying_power_before']);
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertCount(3, $this->placed);
+        $this->assertEquals(150, array_sum(array_column($this->placed, 'dollar_amount')));
+    }
+
+    public function test_buying_power_change_requires_a_new_preview_and_current_power_is_rechecked(): void
+    {
+        $this->preview();
+        config()->set('harness.basket.funding_source', 'broker_buying_power');
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertFailed();
+        $this->preview();
+        $this->buyingPower = 10;
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertCount(0, $this->placed);
+    }
+
+    public function test_default_cash_mode_does_not_adopt_buying_power(): void
+    {
+        $this->buyingPower = 317.08;
+        $event = $this->preview();
+        $this->assertEquals(100, $event->gross_buys_usd);
+        $this->assertSame('settled_cash', $event->notes['funding_source']);
+    }
+
     public function test_shared_execution_lock_defers_without_broker_reads(): void
     {
         $release = ConvexLoopLock::acquire();
@@ -219,7 +257,7 @@ class BasketRebalanceCommandTest extends TestCase
     public function test_unknown_held_market_value_blocks_instead_of_assuming_zero(): void
     {
         $this->positions = [['symbol' => 'AAA', 'quantity' => 1, 'average_price' => 10]];
-        $this->artisan('theta:basket-rebalance',['--dry-run' => true])->assertFailed();
-        $this->assertSame(0,RebalanceEvent::count());
+        $this->artisan('theta:basket-rebalance', ['--dry-run' => true])->assertFailed();
+        $this->assertSame(0, RebalanceEvent::count());
     }
 }

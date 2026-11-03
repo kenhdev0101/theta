@@ -301,6 +301,7 @@ return [
         'snapshot_stale_seconds' => (int) env('HARNESS_MONITOR_SNAPSHOT_STALE_SECONDS', 180),
     ],
     'basket' => [
+        'funding_source' => 'settled_cash', // Explicit desk opt-in: broker_buying_power for this basket only.
         'enabled' => false,
         'armed' => false,
         'active_event_id' => null,

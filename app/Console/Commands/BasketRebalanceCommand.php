@@ -9,6 +9,7 @@ use App\Models\RebalanceEvent;
 use App\Models\RebalanceLeg;
 use App\Models\RobinhoodTradeJournal;
 use App\Robinhood\Basket\BasketBrokerTruth;
+use App\Robinhood\Basket\BasketBuyingPowerGate;
 use App\Robinhood\Basket\BasketRebalancePlanner;
 use App\Robinhood\Basket\BasketWeights;
 use App\Robinhood\Convex\ConvexLoopLock;
@@ -65,6 +66,7 @@ class BasketRebalanceCommand extends Command
     {
         $cfg = $this->assembleConfig();
         $basket = (array) ($cfg['basket'] ?? []);
+        $fundingSource = (string) ($basket['funding_source'] ?? 'settled_cash');
         $arm = (bool) $this->option('arm') && ! $this->option('dry-run');
         if ($arm && ($this->option('fixture') !== null || $this->option('weights') !== null)) {
             $this->error('ARM refused: fixture and weights overrides are preview-only');
@@ -82,7 +84,7 @@ class BasketRebalanceCommand extends Command
         }
         $weights = BasketWeights::fromCsv((string) ($this->option('weights') ?: ($basket['weights_path'] ?? base_path('docs/weighting-basket.csv'))));
         $event = $arm ? RebalanceEvent::query()->find((int) ($basket['active_event_id'] ?? 0)) : null;
-        if ($arm && ($event === null || $event->weights_payload_hash !== $weights->payloadHash || data_get($event->notes, 'truth_source') !== 'live')) {
+        if ($arm && ($event === null || $event->weights_payload_hash !== $weights->payloadHash || data_get($event->notes, 'truth_source') !== 'live' || data_get($event->notes, 'funding_source', 'settled_cash') !== $fundingSource)) {
             $this->error('ARM refused: select a live preview event matching the configured weights');
 
             return self::FAILURE;
@@ -101,6 +103,10 @@ class BasketRebalanceCommand extends Command
             $allocation = (array) ($cfg['allocation'] ?? []);
             $plan = (new BasketRebalancePlanner)->plan($weights, [
                 'settled_cash' => $truth['settled_cash'],
+                'funding_source' => $fundingSource,
+                'available_funds' => $fundingSource === 'broker_buying_power'
+                    ? (is_numeric($truth['broker_buying_power'] ?? null) && is_numeric($truth['unleveraged_buying_power'] ?? null) ? min($truth['broker_buying_power'], $truth['unleveraged_buying_power']) : null)
+                    : $truth['settled_cash'],
                 'positions' => $truth['positions'], 'tradability' => $truth['tradability'],
                 'trigger' => $trigger,
                 'per_play_max_debit' => (float) ($allocation['per_play_max_debit'] ?? 0),
@@ -109,7 +115,7 @@ class BasketRebalanceCommand extends Command
                 'min_leg_notional_usd' => (float) ($basket['min_leg_notional_usd'] ?? 1),
             ]);
             $event = $this->persist($plan, $basket, $trigger, true, false, (bool) ($cfg['kill_switch'] ?? true), null);
-            $event->forceFill(['notes' => array_merge((array) $event->notes, ['truth_source' => $truth['source']])])->save();
+            $event->forceFill(['notes' => array_merge((array) $event->notes, ['truth_source' => $truth['source'], 'funding_source' => $fundingSource, 'broker_buying_power_before' => $truth['broker_buying_power'] ?? null, 'unleveraged_buying_power_before' => $truth['unleveraged_buying_power'] ?? null, 'funds_after_planned' => $plan['funds_after_planned']])])->save();
             foreach ($event->legs()->get() as $leg) {
                 $leg->forceFill(['logical_order_id' => 'basket:event:'.$event->id.':'.$leg->ticker])->save();
             }
@@ -134,7 +140,8 @@ class BasketRebalanceCommand extends Command
         }
         $cfg['allocation']['max_open_positions'] = (int) data_get($cfg, 'basket.max_open_positions', 8);
         $refs = new OrderRefStore;
-        $executor = new EquityExecutor($client, new RailPipeline, $refs, $recorder, $cfg);
+        $fundingGate = data_get($cfg, 'basket.funding_source') === 'broker_buying_power' ? new BasketBuyingPowerGate : null;
+        $executor = new EquityExecutor($client, new RailPipeline(fundingGate: $fundingGate), $refs, $recorder, $cfg);
         $event->forceFill(['dry_run' => false, 'armed' => true, 'kill_switch' => false])->save();
         $spent = $this->spentTodayDebit();
         $reserved = 0.0;
@@ -180,7 +187,7 @@ class BasketRebalanceCommand extends Command
 
                 continue;
             }
-            $context = ['session_open' => true, 'tradability' => 'tradable', 'settled_cash' => $truth['settled_cash'],
+            $context = ['broker_buying_power' => $truth['broker_buying_power'] ?? null, 'unleveraged_buying_power' => $truth['unleveraged_buying_power'] ?? null, 'session_open' => true, 'tradability' => 'tradable', 'settled_cash' => $truth['settled_cash'],
                 'open_order_reserved_debit' => $reserved, 'spent_today_debit' => $spent,
                 'symbol_open_debit' => $symbolDebits, 'open_positions' => array_keys($positionSymbols), 'open_orders' => $truth['orders']];
             try {
@@ -247,7 +254,7 @@ class BasketRebalanceCommand extends Command
         }
         $event->forceFill(['cash_deployed' => round($filledDebit, 2), 'settled_cash_after' => $truth['settled_cash'],
             'status' => $complete ? RebalanceEvent::STATUS_RECONCILED : $event->status,
-            'notes' => array_merge((array) $event->notes, ['last_readback_at' => now()->toISOString(), 'last_trigger' => $this->option('trigger')])])->save();
+            'notes' => array_merge((array) $event->notes, ['buying_power_after' => $truth['broker_buying_power'] ?? null, 'last_readback_at' => now()->toISOString(), 'last_trigger' => $this->option('trigger')])])->save();
     }
 
     private function spentTodayDebit(): float
@@ -292,7 +299,7 @@ class BasketRebalanceCommand extends Command
                 'armed' => $armed,
                 'notes' => array_filter([
                     'strategy_label' => (string) ($basket['strategy_label'] ?? 'theta_basket_etf'),
-                    'available_settled_for_pass' => $plan['available_settled_for_pass'],
+                    'available_funds_for_pass' => $plan['available_funds_for_pass'],
                     'waterfill_scale' => $plan['waterfill_scale'],
                     'settled_cash_after_planned' => $plan['settled_cash_after_planned'],
                     'arm_refusal' => $armRefusal,
@@ -345,13 +352,14 @@ class BasketRebalanceCommand extends Command
             $this->usd($plan['total_equity']),
         ));
         $this->line(sprintf(
-            'n_legs=%d  gross_buys=%s  cash_deployed(planned)=%s  settled_after(planned)=%s',
+            'n_legs=%d  gross_buys=%s  planned_debit=%s  funds_after(planned)=%s',
             $plan['n_legs'],
             $this->usd($plan['gross_buys_usd']),
             $this->usd($plan['cash_deployed']),
-            $this->usd($plan['settled_cash_after_planned']),
+            $this->usd($plan['funds_after_planned']),
         ));
 
+        $this->line('funding_source='.$plan['funding_source'].'  funds_before='.$this->usd($plan['funds_before']));
         $byReason = [];
         foreach ($plan['legs'] as $leg) {
             $key = $leg['action'].'/'.$leg['reason'];

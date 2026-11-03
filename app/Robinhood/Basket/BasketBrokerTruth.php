@@ -16,6 +16,9 @@ final class BasketBrokerTruth
     public function read(RobinhoodMcpClient $client, array $tickers): array
     {
         $portfolio = $client->getPortfolio();
+        $buyingPower = PortfolioReader::buyingPower($portfolio);
+        $rawUnleveraged = data_get(PortfolioReader::unwrap($portfolio), 'buying_power.unleveraged_buying_power');
+        $unleveraged = is_numeric($rawUnleveraged) ? (float) $rawUnleveraged : null;
         $positions = $this->pages(fn ($filters) => $client->getEquityPositions($filters));
         $equities = $this->pages(fn ($filters) => $client->getAllEquityOrders($filters));
         $options = $this->pages(fn ($filters) => $client->getAllOptionOrders($filters));
@@ -68,7 +71,7 @@ final class BasketBrokerTruth
             }
         }
 
-        return ['source' => 'live', 'settled_cash' => $cash['settled_cash'], 'positions' => BasketRebalancePlanner::normalizePositions($positions),
+        return ['source' => 'live', 'broker_buying_power' => $buyingPower, 'unleveraged_buying_power' => $unleveraged, 'settled_cash' => $cash['settled_cash'], 'positions' => BasketRebalancePlanner::normalizePositions($positions),
             'positions_raw' => $positions, 'orders' => array_merge($equities, $options), 'tradability' => $tradability];
     }
 

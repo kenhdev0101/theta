@@ -48,6 +48,8 @@ final class BasketRebalancePlanner
     public function plan(BasketWeights $weights, array $params): array
     {
         $settledCash = $this->floatOrNull($params['settled_cash'] ?? null);
+        $fundingSource = (string) ($params['funding_source'] ?? 'settled_cash');
+        $funds = array_key_exists('available_funds', $params) ? $this->floatOrNull($params['available_funds']) : $settledCash;
         $positions = (array) ($params['positions'] ?? []);
         $tradability = (array) ($params['tradability'] ?? []);
         $priorAfter = $this->floatOrNull($params['prior_settled_cash_after'] ?? null);
@@ -87,8 +89,8 @@ final class BasketRebalancePlanner
             $depositDetected = true;
         }
 
-        $cashUnverified = $settledCash === null;
-        $totalEquity = $cashUnverified ? null : round($settledCash + $basketMv, 2);
+        $cashUnverified = $funds === null;
+        $totalEquity = $cashUnverified ? null : round($funds + $basketMv, 2);
 
         // Pass 1 — per-name diff + fractionability gate; mark buy candidates.
         $legs = [];
@@ -190,7 +192,7 @@ final class BasketRebalancePlanner
         $available = 0.0;
         $waterfillScale = 1.0;
         if (! $cashUnverified) {
-            $available = max(0.0, $settledCash);
+            $available = max(0.0, $funds);
             if ($perDayCap >= 0.0) {
                 $available = min($available, $perDayCap);
             }
@@ -232,7 +234,7 @@ final class BasketRebalancePlanner
             'as_of' => now()->toISOString(),
             'trigger' => $trigger,
             'status' => $status,
-            'abort_reason' => $cashUnverified ? 'settled_cash_unverified' : null,
+            'abort_reason' => $cashUnverified ? ($fundingSource === 'settled_cash' ? 'settled_cash_unverified' : 'buying_power_unverified') : null,
             'deposit_detected' => $depositDetected,
             'deposit_amount' => $depositAmount,
             'settled_cash_before' => $settledCash,
@@ -242,13 +244,16 @@ final class BasketRebalancePlanner
             'weights_source' => $weights->sourceId,
             'weights_payload_hash' => $weights->payloadHash,
             'spec_version' => $weights->version,
-            'available_settled_for_pass' => round($available, 2),
+            'available_funds_for_pass' => round($available, 2),
             'waterfill_scale' => round($waterfillScale, 6),
             'n_legs' => count($legs),
             'gross_buys_usd' => $grossBuys,
             'gross_sells_usd' => 0.0,
             'cash_deployed' => $grossBuys,
-            'settled_cash_after_planned' => $cashUnverified ? null : round($settledCash - $grossBuys, 2),
+            'settled_cash_after_planned' => $fundingSource === 'settled_cash' && ! $cashUnverified ? round($settledCash - $grossBuys, 2) : null,
+            'funding_source' => $fundingSource,
+            'funds_before' => $funds,
+            'funds_after_planned' => $cashUnverified ? null : round($funds - $grossBuys, 2),
             'legs' => $legs,
         ];
     }

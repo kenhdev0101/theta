@@ -25,14 +25,14 @@ final class RailPipeline
     private readonly array $gates;
 
     /** @param list<GateInterface>|null $gates */
-    public function __construct(?array $gates = null)
+    public function __construct(?array $gates = null, ?GateInterface $fundingGate = null)
     {
         $this->gates = $gates ?? [
             new KillSwitchGate,
             new SessionGate,
             new SizingGate,
             new AllocationGate,
-            new SettledCashGate,
+            $fundingGate ?? new SettledCashGate,
             new ReviewGate,
             new IdempotencyGate,
         ];
