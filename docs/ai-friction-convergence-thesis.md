@@ -4,7 +4,7 @@ Owner: lead developer / desk
 Agent ID: research-agent (Claude Opus 4.8)
 Scope: theta human-thesis policy family — the macro AI friction-removal / convergence thesis and its tradable expressions
 Status: DOCUMENTATION / ITERATING (candidate; pre-trade; nothing placed)
-As of: 2026-11-02 (§10 weighting methodology v2 specced; §6 tape index + four lane sweeps; §1–5, §8 core as of 2026-10-30)
+As of: 2026-11-02 (§11 live-expression + rebalance-ledger design; §10 weighting methodology v2; §6 tape index + four lane sweeps; §1–5, §8 core as of 2026-10-30)
 
 > Source narrative: "Click Twice, Wait for Jim" (@ken, 2026-10-30). This doc is the tradable
 > distillation. We are in the documentation phase: write it down, iterate, keep what survives.
@@ -157,8 +157,12 @@ McKinsey 6% high-performers, MIT ~95% no return — read so bad: raw inference w
   cleanest; grounding infra **ESTC** (Elastic, vector/RAG), **CFLT** (Confluent, real-time context),
   SNOW/MDB (Cortex/vector), **TDC** (Teradata, lead); connector platforms shipping MCP *now* — CRM
   (MuleSoft), SAP (MCP Gateway), WDAY (Adaptive MCP Server), VEEV (life-sci); the *verify* leg is all
-  names we already hold (DDOG/DT/NOW/CSCO). Pure-plays — Datarails, Databricks, dbt, Pinecone, Vena,
-  Pigment — private (Databricks the marquee IPO-watch). Flags: BASE (Couchbase) reportedly taken
+  names we already hold (DDOG/DT/NOW/CSCO). Pure-plays — Datarails, dbt, Pinecone, Vena, Pigment —
+  private, no clean proxy. **Databricks** (the marquee name) is reachable only via fund vehicles:
+  DXYZ cleanest listed route (premium-to-NAV), ARKVX (interval), BST/BSTZ (BlackRock tech trusts,
+  broad — verify holding); IPO not before ~2027. Hyperscaler catalog/grounding sleeves — ORCL (AI
+  Data Catalog + Business Semantic Layer, Oct-2026 roadmap), GOOGL/AMZN/MSFT — are crowded
+  dual-roles, not pure-plays. Flags: BASE (Couchbase) reportedly taken
   private 2025 — verify; INFA → CRM (deal-dependent).
 - **Weighting note (not scored here):** these are earlier-cycle / already-monetizing vs the
   incident-gated cleanup crew — a friction/timing nuance to weigh when scoring, not a new axis.
@@ -810,6 +814,7 @@ crowding; cleanup re-rate still ahead.
 - [ ] Sizing / exit mechanism: the N-signal deterministic exit carve-out (future build; the
   instrument floor is its first layer). Superseded/extended by §10 below.
 - [ ] Ratify §10 v2 weighting spec before any build (capex-term settled 2026-11-02; §10.6 items remain).
+- [ ] Build §11 expression: `theta:basket-rebalance` + `rebalance_event` / `rebalance_leg` ledger (the one new lane; the rest reuses the equity spine). Robinhood has no build-your-own-ETF — confirmed 2026-11-02; the harness is the wrapper.
 
 ## 10. Weighting methodology (v2 — pressure-tested 2026-11-02)
 
@@ -854,8 +859,9 @@ Scored by trench knowledge, never by a model (Core Architecture Law). Per name:
 | 0–1 | Off the AI radar — no narrative premium; the market doesn't connect it to the thesis. |
 
 Scoring: one lane at a time for calibration; score `friction` and `oracle` independently; low scores
-must mean a genuine read, not sparse coverage. Seed sheet: `docs/weighting-seed.csv` (203 names,
-objective columns pre-filled).
+must mean a genuine read, not sparse coverage. Seed sheet: `docs/weighting-seed.csv` (207 names,
+objective columns pre-filled). Ranked output: `docs/weighting-ranked.csv`; selected book:
+`docs/weighting-basket.csv` (38 names on strawman scores).
 
 ### 10.2 Score (bounded — friction leads)
 
@@ -923,3 +929,138 @@ Sanity check, not a subsystem: eyeball whether a ±1-point score change swings a
 - [ ] Selection rule (top-N by score? a hard friction floor, e.g. keep ≥ 7?).
 - [ ] Placeholders to set: cap 20% / min trade size / drift 0.10 / buffer 18% / oracle λ 0.5.
 - [ ] Rater protocol for `friction` / `oracle` (written anchors, score independently).
+
+## 11. Live expression — the harness is the ETF wrapper
+
+Owner: lead developer / desk · Agent ID: research-agent (Claude Opus 4.8)
+Status: DESIGN SPEC — not built, not armed, nothing traded. The §10 weights are the product; this is how we *hold* them.
+
+**Robinhood has no build-your-own-ETF** (confirmed against Robinhood's own docs, 2026-11-02:
+fractional/dollar shares yes, recurring buys into one ticker yes, recurring across multiple coins
+crypto-only — but no native "define target weights across N stocks, auto-allocate deposits, rebalance
+to weights" product; that is an M1-pie / Fidelity-Basket / Schwab-Personalized-Indexing feature
+Robinhood does not carry). There is no Robinhood "ETF pool" object to deposit into — and we do not
+need one. **The harness is the wrapper.** Our ETF is a set of durable equity positions plus a
+rebalance rule; no fund, no ticker, no 40-Act sponsor, no wrapper fee. This is the right amount of
+code: almost all of it already exists on the equity spine, and the one new lane is thin.
+
+### 11.1 What we hold
+
+N durable **notional** equity positions in the pinned agentic cash account (872449178), weighted by
+§10, *held* — not timed (§5 path-independence). The "ETF" is the positions + the rebalance rule.
+Long-only, cash-account, settled-cash-gated (Capital Firewall). The operator funding the account is
+the only contribution surface; the engine does the allocation.
+
+### 11.2 The basket spec — reuse the ThesisSpec (don't invent)
+
+Each basket slot is one `ThesisSpecLeg` (`app/Robinhood/Thesis/ThesisSpecLeg.php`):
+
+- `asset_class: equity`, `direction: long`, `sizing.mode: balance_fraction` — **the §10 weight is the
+  fraction**. `SIZING_BALANCE_FRACTION` ("a fraction of settled balance — the size scales with the
+  account") already exists; it is the ETF weight by construction, so the book re-sizes itself as the
+  account grows with deposits.
+- `leg_id` → the durable `logical_order_id` for that slot.
+- `invalidation.thesis_stop` only (we hold unless the *thesis* breaks); no `time_stop`, no
+  per-leg price stop unless a name earns one. This is the opposite of the options lane's fast-exit.
+
+The 38-name basket drops straight in as 38 balance-fraction legs. `ThesisSpec` / `ThesisSpecLeg` /
+`ThesisSpecValidator` already parse and validate this document — reused, not rebuilt.
+
+### 11.3 The order primitive — reuse the equity spine
+
+- **Fractional is already wired:** `EquityExecutor::orderPayload()`
+  (`app/Robinhood/Execution/EquityExecutor.php`) emits Robinhood's `dollar_amount` field — a notional
+  order = fractional shares. A $180 slot in a $5k book is a dollar amount, not a whole-share problem.
+- **Durable, non-double-submitting:** `OrderIntent::intentKey()` with a `logical_order_id` hashes to
+  `durable|strategy|logical_id`; a rebalance pass reconciles the same slot instead of re-buying it.
+- Rails (`RailPipeline`), ref-before-place (`OrderRefStore`), the journal
+  (`RobinhoodTradeJournal`), and equity reconciliation are all already on this path.
+- **The options thesis lane (`theta:thesis-assemble` / `theta:thesis-execute`) is the amplifier — a
+  different lane.** The basket reuses the shared spine (rails, refs, executor, journal) and reuses
+  *none* of the options machinery (DTE bands, chase ladder, entry window, per-play debit). Wrong tool
+  for a hold-forever equity sleeve.
+
+### 11.4 The rebalance engine — `theta:basket-rebalance` (the one new command)
+
+Deterministic diff, no model on the path:
+
+```
+read broker truth:  settled_cash, equity positions   (get_portfolio / get_equity_positions — NOT journal intent)
+per name i:         target_notional_i = w_i × (settled_cash + basket_MV)
+                    drift_i = target_notional_i − current_notional_i
+emit:               bounded marketable-limit NOTIONAL buys to close positive drift
+```
+
+**Deposit → water-fill falls out for free.** A deposit into 872449178 lands as settled cash; the next
+pass sees cash > 0 and spreads it across the basket by weight — pure buys, no timing, no selling.
+That is the "add to the pool" behavior the operator wants, and it *is* the §5 invariant (hold,
+don't time, path-independent). Selling is governed by §10.5 only (drift alert, asymmetric, tax-lot
+aware), never by the deposit path. Gates carried, not re-invented: fractionability (§11.6),
+settled-cash-only (no unsettled-proceeds recycling), long-only, §10.4 caps, kill switch.
+
+### 11.5 The rebalance ledger — the ceremony (new primitive)
+
+A rebalance is a **first-class durable entity**; every name it touches is a **line item**; the whole
+pass reconciles against broker truth. Two tables, parent/child:
+
+```
+rebalance_event (parent — one row per pass)
+  id, owner, agent_id                         ← artifact-ownership law
+  trigger        deposit | drift | score_change | manual | scheduled
+  as_of
+  — broker-truth snapshot at open —
+  settled_cash_before, basket_mv_before, book_before, deposit_detected
+  — target source (reproducible) —
+  thesis_spec_id, spec_version, weights_payload_hash
+  — outcome totals —
+  n_legs, gross_buys_usd, gross_sells_usd, cash_deployed, settled_cash_after
+  status         planned → placing → placed → reconciled | partially_filled | aborted
+```
+
+```
+rebalance_leg (line items — one row per name touched)
+  rebalance_event_id (FK), ticker, logical_order_id
+  weight_target, notional_target, position_before (shares + MV, broker truth), drift_usd
+  action         buy | sell | hold | drop
+  reason         deposit_fill | drift_trim | new_admit | dropped_untradable | at_target
+  fractionable   gate result (§11.6)
+  — order/fill truth BY REFERENCE —
+  client_ref_id, broker_order_id  → the RobinhoodTradeJournal row
+```
+
+**Reuse boundary.** The journal stays the per-order broker-truth record (shared with the options
+lane): fill truth — `filled_qty`, `fill_price`, `filled_at`, status per the `LIVE_FILLED` /
+`LIVE_POSTED_NOT_FILLED` / … taxonomy — lives on the journal row. The `rebalance_leg` adds only the
+basket context (target weight, drift, reason) and points at the journal by `client_ref_id`. No
+duplicated fill columns. **Structured rows are the source of truth; any Markdown/CSV readback is
+rendered from them** (ledger law — no hand-maintained Markdown ledger).
+
+**Reconciliation closes the pass.** Read broker positions back, write `settled_cash_after` and each
+leg's journal fill truth. A leg whose journal row never reaches `LIVE_FILLED` stays open: the next
+pass re-derives the diff from *live* positions, so an unfilled buy is simply re-attempted — never
+double-counted, because the `logical_order_id` / ref makes it idempotent. A deposit is just the
+history of `deposit_detected` across events; the audit trail answers "what changed, when, triggered
+by what, and did the broker confirm it."
+
+### 11.6 Fractionability gate — the one real constraint
+
+Notional orders cover most large-cap US equities and many ETFs, but **not** ADRs reliably, OTC names,
+or thinner closed-end funds (DXYZ, BST/BSTZ sit here). Holdability (`handle ∈ {public, ADR, OTC,
+fund}`) is the §10.3 gate; **notional-tradability is stricter and per-name** (`get_equity_tradability`
+/ the review call). A name that fails → whole-share sizing (may not fit a small book) or
+`dropped_untradable`, recorded as a leg reason, never silently skipped. This gate belongs in the
+command, not the scoring sheet.
+
+### 11.7 Built vs. gap
+
+- **Reused (already built):** `ThesisSpec` / `ThesisSpecLeg` / `ThesisSpecValidator`,
+  `balance_fraction` sizing, `EquityExecutor` + `dollar_amount`, `OrderIntent` durable key,
+  `RailPipeline`, `OrderRefStore`, `RobinhoodTradeJournal`, equity reconciliation.
+- **New (to build):** `theta:basket-rebalance` (diff + notional buys + fractionability gate);
+  `rebalance_event` + `rebalance_leg` models / migrations / relations; a thin weights source
+  (`weighting-basket.csv` → `balance_fraction` legs, or author the spec directly).
+- **Not reused:** the options amplifier's DTE / chase / window / per-play-debit machinery — wrong lane.
+
+Sizing is notional-agnostic: the §10 weights *are* the allocation; dollars = weight × settled
+balance. "Less than $1M initially" changes nothing about the design — only fractionability at the
+very small end.
