@@ -24,3 +24,22 @@ A selected event fixes both symbols and dollar amounts. Each leg has an event-sc
 This launch executes one reviewed initial basket plan. Deposits, new weights, or new admission dates require a fresh live preview and explicit selection of its event; they do not silently spend through the old event. Unsupported fractional names remain named drops rather than substitutes. Broker review/placement is the holiday and exceptional-session backstop; the local clock models regular weekday hours. No liquidation policy is introduced here.
 
 Operational evidence lives in the rebalance ledger, linked trade journal, scheduler output, and broker readback. The existing Convex cockpit remains unchanged.
+
+## Strategy ownership and follow-up checks
+
+Owner: desk. Agent ID: codex/root. Scope: tacit equity isolation and the next deposit. Status: ownership audit complete; November 4 deposit check scheduled.
+
+The November 3 post-close audit matched all 34 broker position quantities to tacit's 34 filled journal records. No foreign orders in these symbols since launch, quantity discrepancies, or working orders were found. Event 3 is reconciled: $274.27 filled and $42.81 broker buying power remaining.
+
+`TacitEquityOwnership` is mandatory inside the shared equity executor, before broker review or placement. Other equity strategies cannot buy or sell an enabled tacit universe name. Existing equity fill journals and attempted-placement references keep names protected even if the basket is disabled or the weights change. Partial fills and unknown placement outcomes retain protection. V1 has no automatic ownership release; moving a name to another family requires an explicit migration. The tacit owner remains buy-only. Options on the same underlying are distinct instruments and retain their separate execution path.
+
+The production execution-path audit found two equity callers: the basket and the manual live-equity probe. Both pass the shared executor. Convex only submits option orders and reconciles option journals labeled `convex_thesis_probe`. The optional options thesis is disabled, and general options/autopilot and legacy equity schedules are inactive. Generic equity reconciliation/readback can read holdings for account risk but does not place, cancel, or modify journals. No application caller invokes equity cancellation. This boundary applies to Theta's application paths; direct broker actions outside the harness are not segregated by these checks.
+
+Follow-up on **November 4, 2026 at 06:50 Pacific / 09:50 New York**, once only:
+
+1. Verify that the desk's deposit appears in fresh broker buying power/unleveraged buying power; record pending versus available funds separately from settled cash.
+2. Recheck tacit quantities, foreign/working orders, authentication, scheduler posture, and unchanged caps.
+3. Generate an unarmed deposit preview from current marked positions and human weights. Verify proportional underweight allocations, overweight holds, fractional exclusions, minimum legs and cent rounding, cash remainder, and remaining per-day/per-order/per-symbol/position capacity. Check the preview against execution rails, which may reject a plan: the planner does not currently preallocate per-symbol capacity or position slots, and the generic allocation gate currently counts a top-up against a full position limit. Resolve any applicable mismatch before selecting a new live event.
+4. Confirm event 3 cannot resubmit. A deposit does not activate a new batch automatically. Report the proposed top-ups or concrete blocker; this check does not select an event, submit/cancel orders, or change limits.
+
+The scheduled check may persist a preview with `theta:basket-rebalance --dry-run --trigger=deposit`. If the deposit is absent at that time, report that it is pending and wait for desk direction rather than running an indefinite monitor.
