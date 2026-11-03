@@ -40,7 +40,7 @@ class BasketRebalanceCommand extends Command
 
     public function handle(): int
     {
-        $release = ConvexLoopLock::acquire();
+        $release = $this->acquireAccountLock();
         if ($release === null) {
             $this->line('basket deferred: account execution lock busy; retry next tick');
 
@@ -60,6 +60,24 @@ class BasketRebalanceCommand extends Command
         } finally {
             $release();
         }
+    }
+
+    private function acquireAccountLock(): ?\Closure
+    {
+        $release = ConvexLoopLock::acquire();
+        if ($release !== null || DB::connection()->getDriverName() !== 'mysql') {
+            return $release;
+        }
+        // Convex is scheduled first on the minute. Briefly queue behind that
+        // tick instead of losing every basket invocation to the same race.
+        $result = DB::selectOne('SELECT GET_LOCK(?, 5) AS acquired', ['theta:convex-auto-loop']);
+        if ((int) ($result->acquired ?? 0) !== 1) {
+            return null;
+        }
+
+        return static function (): void {
+            DB::selectOne('SELECT RELEASE_LOCK(?) AS released', ['theta:convex-auto-loop']);
+        };
     }
 
     private function runPass(): int
