@@ -103,6 +103,9 @@ final class EquityExecutor
         }
 
         $placement = PortfolioReader::unwrap($placement);
+        if (is_array($placement['order'] ?? null)) {
+            $placement = $placement['order'];
+        }
         $brokerOrderId = $placement['order_id'] ?? $placement['id'] ?? null;
         $this->refs->markPlaced($ref, is_string($brokerOrderId) ? $brokerOrderId : null);
 

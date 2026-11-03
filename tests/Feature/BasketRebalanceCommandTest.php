@@ -63,7 +63,7 @@ class BasketRebalanceCommandTest extends TestCase
                 'get_equity_orders' => ['orders' => array_map(fn ($row) => ['id' => $row['order_id'], 'ref_id' => $row['ref_id'], 'symbol' => $row['symbol'], 'side' => 'buy', 'state' => $this->fills ? 'filled' : 'queued', 'cumulative_quantity' => $this->fills ? (float) $row['dollar_amount'] / 10 : 0, 'average_price' => $this->fills ? 10 : null], $this->placed)],
                 'get_option_orders' => ['orders' => []],
                 'get_equity_tradability' => ['results' => array_map(fn ($symbol) => ['symbol' => $symbol, 'state' => 'active', 'tradeable' => true, 'fractional_tradability' => 'tradable'], $args['symbols'])],
-                'get_equity_quotes' => ['results' => []],
+                'get_equity_quotes' => ['results' => array_map(fn ($symbol) => ['quote' => ['symbol' => $symbol, 'bid_price' => '9.99', 'ask_price' => '10.01', 'venue_bid_time' => now()->toISOString(), 'venue_ask_time' => now()->toISOString()]], $args['symbols'])],
                 default => ['ok' => true, 'alerts' => []],
             };
             if ($tool === 'place_equity_order') {
@@ -75,7 +75,7 @@ class BasketRebalanceCommandTest extends TestCase
                 }
                 $args['order_id'] = 'broker-'.count($this->placed);
                 $this->placed[] = $args;
-                $body = ['order_id' => $args['order_id'], 'state' => 'queued'];
+                $body = ['order' => ['id' => $args['order_id'], 'state' => 'queued', 'ref_id' => $args['ref_id']]];
             }
 
             return Http::response(['jsonrpc' => '2.0', 'id' => $payload['id'], 'result' => ['isError' => false, 'content' => [['type' => 'text', 'text' => json_encode(['data' => $body])]]]]);
@@ -262,6 +262,26 @@ class BasketRebalanceCommandTest extends TestCase
         $this->assertSame(50, config('harness.allocation.per_play_max_debit'));
     }
 
+    public function test_live_quote_wrapper_values_existing_positions_and_reconciles_missing_placement_ids(): void
+    {
+        $event = $this->preview();
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertNotNull($event->legs()->first()->broker_order_id);
+        $event->legs()->update(['broker_order_id' => null]);
+        RobinhoodTradeJournal::query()->where('strategy_label', 'theta_basket_etf')->update(['broker_order_id' => null]);
+        HarnessOrderRef::query()->update(['broker_order_id' => null]);
+        $this->positions = [['symbol' => 'AAA', 'quantity' => '5', 'average_buy_price' => '10']];
+        $this->fills = true;
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertSame('reconciled', $event->refresh()->status);
+        $this->assertNotNull($event->legs()->first()->broker_order_id);
+        $this->assertSame(0, RobinhoodTradeJournal::query()->where('strategy_label', 'theta_basket_etf')->whereNull('broker_order_id')->count());
+        $requestCount = count(Http::recorded());
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertSame($requestCount, count(Http::recorded()), 'a completed batch no longer spends broker API credits');
+        $this->assertCount(3, $this->placed);
+    }
+
     public function test_shared_execution_lock_defers_without_broker_reads(): void
     {
         $release = ConvexLoopLock::acquire();
@@ -275,7 +295,7 @@ class BasketRebalanceCommandTest extends TestCase
 
     public function test_unknown_held_market_value_blocks_instead_of_assuming_zero(): void
     {
-        $this->positions = [['symbol' => 'AAA', 'quantity' => 1, 'average_price' => 10]];
+        $this->positions = [['quantity' => 1, 'average_price' => 10]];
         $this->artisan('theta:basket-rebalance', ['--dry-run' => true])->assertFailed();
         $this->assertSame(0, RebalanceEvent::count());
     }

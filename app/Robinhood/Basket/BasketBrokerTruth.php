@@ -37,12 +37,15 @@ final class BasketBrokerTruth
         $quotes = [];
         foreach (array_chunk(array_unique($symbols), 10) as $chunk) {
             foreach ($this->rows($client->getEquityQuotes($chunk), ['quotes', 'results']) as $row) {
+                $row = is_array($row['quote'] ?? null) ? $row['quote'] : $row;
                 $symbol = strtoupper((string) ($row['symbol'] ?? ''));
                 $bid = $row['bid_price'] ?? null;
                 $ask = $row['ask_price'] ?? null;
-                $stamp = $row['updated_at'] ?? null;
+                $stamp = $row['updated_at'] ?? $row['venue_bid_time'] ?? null;
+                $askStamp = $row['updated_at'] ?? $row['venue_ask_time'] ?? null;
                 if (is_numeric($bid) && is_numeric($ask) && (float) $bid > 0 && (float) $ask >= (float) $bid && is_string($stamp)
-                    && abs(now()->getTimestamp() - Carbon::parse($stamp)->getTimestamp()) <= 120) {
+                    && is_string($askStamp) && abs(now()->getTimestamp() - Carbon::parse($stamp)->getTimestamp()) <= 120
+                    && abs(now()->getTimestamp() - Carbon::parse($askStamp)->getTimestamp()) <= 120) {
                     $quotes[$symbol] = ((float) $bid + (float) $ask) / 2;
                 }
             }

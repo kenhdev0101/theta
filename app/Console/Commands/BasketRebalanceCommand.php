@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\AssemblesHarnessConfig;
+use App\Models\HarnessOrderRef;
 use App\Models\RebalanceEvent;
 use App\Models\RebalanceLeg;
 use App\Models\RobinhoodTradeJournal;
@@ -109,6 +110,11 @@ class BasketRebalanceCommand extends Command
             $this->error('ARM refused: select a live preview event matching the configured weights');
 
             return self::FAILURE;
+        }
+        if ($arm && $event->status === RebalanceEvent::STATUS_RECONCILED) {
+            $this->info('event #'.$event->id.' completed; no new orders or broker polling');
+
+            return self::SUCCESS;
         }
         $cfg['broker_credits']['mode'] = 'fail';
         $recorder = JsonlRecorder::fromConfig($cfg);
@@ -258,6 +264,11 @@ class BasketRebalanceCommand extends Command
 
                 continue;
             }
+            $brokerId = $matched['id'] ?? $matched['order_id'] ?? null;
+            if (is_string($brokerId) && $leg->broker_order_id === null) {
+                $leg->forceFill(['broker_order_id' => $brokerId])->save();
+                HarnessOrderRef::query()->where('client_ref_id', $leg->client_ref_id)->update(['broker_order_id' => $brokerId]);
+            }
             $state = strtolower((string) ($matched['state'] ?? $matched['status'] ?? 'unknown'));
             $qty = $matched['cumulative_quantity'] ?? $matched['filled_quantity'] ?? null;
             $price = $matched['average_price'] ?? $matched['average_fill_price'] ?? null;
@@ -268,7 +279,7 @@ class BasketRebalanceCommand extends Command
             $complete = $complete && $state === 'filled' && $verifiedFill;
             $journal = RobinhoodTradeJournal::query()->where('client_ref_id', $leg->client_ref_id)->where('strategy_label', 'theta_basket_etf')->first();
             if ($journal !== null) {
-                $journal->forceFill(['status' => $state, 'filled_quantity' => is_numeric($qty) ? $qty : null,
+                $journal->forceFill(['broker_order_id' => is_string($brokerId) ? $brokerId : $journal->broker_order_id, 'status' => $state, 'filled_quantity' => is_numeric($qty) ? $qty : null,
                     'average_fill_price' => is_numeric($price) ? $price : null,
                     'filled_at' => $state === 'filled' && $verifiedFill ? ($journal->filled_at ?? now()) : $journal->filled_at])->save();
             }
