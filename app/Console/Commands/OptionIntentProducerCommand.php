@@ -7,17 +7,20 @@ namespace App\Console\Commands;
 use App\Console\Commands\Concerns\AssemblesHarnessConfig;
 use App\MarketData\AlpacaMarketDataClient;
 use App\Models\RobinhoodTradeJournal;
+use App\Robinhood\Execution\OrderRefStore;
 use App\Robinhood\Mcp\OAuthTokenStore;
 use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
+use App\Robinhood\Options\MomentumUniverseSelector;
 use App\Robinhood\Options\OptionBrokerContext;
+use App\Robinhood\Options\OptionExecutor;
 use App\Robinhood\Options\OptionGateResult;
 use App\Robinhood\Options\OptionOrderIntent;
 use App\Robinhood\Options\OptionRailPipeline;
 use App\Robinhood\Options\OptionRailVerdict;
-use App\Robinhood\Options\MomentumUniverseSelector;
 use App\Robinhood\Rails\SessionClock;
 use App\Robinhood\Telemetry\JsonlRecorder;
+use App\Robinhood\Thesis\ThesisLaneConfig;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -362,10 +365,10 @@ class OptionIntentProducerCommand extends Command
             }
 
             try {
-                $executor = new \App\Robinhood\Options\OptionExecutor(
+                $executor = new OptionExecutor(
                     $client,
                     $rails,
-                    new \App\Robinhood\Execution\OrderRefStore,
+                    new OrderRefStore,
                     $recorder,
                     $cfg,
                 );
@@ -571,6 +574,24 @@ class OptionIntentProducerCommand extends Command
                 continue;
             }
 
+            // HARD LANE BOUNDARY. This exit engine enumerates raw broker
+            // positions with no journal join, and its max-hold default is one
+            // minute — it would sell a 45-DTE thesis position at the bid about
+            // 60 seconds after it filled. Ownership has to be enforced in code,
+            // not left to whichever env flags happen to be set today.
+            $thesisOwner = $this->thesisLaneOwner((string) $held['option_id']);
+            if ($thesisOwner !== null) {
+                $recorder->record('options_execution', array_merge([
+                    'event' => 'exit_skipped',
+                    'reason' => 'thesis_lane_position_not_scalp_owned',
+                    'option_id' => $held['option_id'],
+                    'underlying_symbol' => $held['underlying_symbol'],
+                ], $thesisOwner));
+                $this->line("{$held['underlying_symbol']}: exit skipped — thesis-lane position, not scalp-owned");
+
+                continue;
+            }
+
             $heldPositions[] = $this->enrichPositionContract($client, $held);
         }
 
@@ -630,6 +651,7 @@ class OptionIntentProducerCommand extends Command
                 $this->recentProducerBlockExists((string) $held['underlying_symbol'], $producer)
                     ? $this->recordSuppressedProducerBlock((string) $held['underlying_symbol'], $reason, $payload)
                     : $this->recordProducerBlock((string) $held['underlying_symbol'], $reason, $payload, $producer);
+
                 continue;
             }
 
@@ -685,10 +707,10 @@ class OptionIntentProducerCommand extends Command
             }
 
             try {
-                $executor = new \App\Robinhood\Options\OptionExecutor(
+                $executor = new OptionExecutor(
                     $client,
                     $rails,
-                    new \App\Robinhood\Execution\OrderRefStore,
+                    new OrderRefStore,
                     $recorder,
                     $cfg,
                 );
@@ -728,6 +750,59 @@ class OptionIntentProducerCommand extends Command
         }
 
         return ['created' => $created, 'blocked' => $blocked];
+    }
+
+    /**
+     * Thesis-lane ownership stamp for a HELD contract, or null when the scalp
+     * lane may manage it.
+     *
+     * Attribution runs against the row that actually opened the position — the
+     * most recent filled buy-to-open, falling back to the most recent working
+     * one — and only then asks which lane that row belongs to. Matching any
+     * row that merely carries the option id would let a stale thesis row (an
+     * expired-unfilled entry from a previous week, on a contract the scalp
+     * lane later bought itself) disable the scalp lane's own protective stop
+     * on its own position.
+     *
+     * @return array{thesis_intent_id: int|null, journal_id: int, strategy_label: string|null, owner_status: string}|null
+     */
+    private function thesisLaneOwner(string $optionId): ?array
+    {
+        if ($optionId === '') {
+            return null;
+        }
+
+        $opener = fn (array $statuses): ?RobinhoodTradeJournal => RobinhoodTradeJournal::query()
+            ->where('asset_class', 'option')
+            ->where('option_id', $optionId)
+            ->where('side', 'buy')
+            ->where('position_effect', 'open')
+            ->whereIn('status', $statuses)
+            ->latest('id')
+            ->first(['id', 'status', 'thesis_intent_id', 'strategy_label']);
+
+        $row = $opener(['filled'])
+            ?? $opener(['open', 'partially_filled', 'submitted', ThesisLaneConfig::STATUS_ENTRY_FILLED]);
+
+        if (! $row instanceof RobinhoodTradeJournal) {
+            // No journal row claims this position; the scalp lane's existing
+            // broker-position behaviour is unchanged.
+            return null;
+        }
+
+        $thesisOwned = $row->thesis_intent_id !== null
+            || $row->strategy_label === ThesisLaneConfig::STRATEGY_LABEL;
+
+        if (! $thesisOwned) {
+            return null;
+        }
+
+        return [
+            'thesis_intent_id' => $row->thesis_intent_id,
+            'journal_id' => $row->id,
+            'strategy_label' => $row->strategy_label,
+            'owner_status' => (string) $row->status,
+        ];
     }
 
     private function enrichPositionContract(RobinhoodMcpClient $client, array $held): array
@@ -1401,10 +1476,10 @@ class OptionIntentProducerCommand extends Command
     /** @return array<string, float> */
     /**
      * @param  bool  $capitalIndependent  when true, return ONLY the strategy/
-     *   config premium caps (max contract ask, per-play debit) and omit every
-     *   account-capital cap (buying power, settled cash, reserve, remaining
-     *   debits). Candidate selection uses this so evaluation never depends on
-     *   available capital; capital gates execution at the caps rail instead.
+     *                                    config premium caps (max contract ask, per-play debit) and omit every
+     *                                    account-capital cap (buying power, settled cash, reserve, remaining
+     *                                    debits). Candidate selection uses this so evaluation never depends on
+     *                                    available capital; capital gates execution at the caps rail instead.
      */
     private function producerPremiumCaps(array $options, array $brokerContext, string $symbol, bool $capitalIndependent = false): array
     {

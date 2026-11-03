@@ -6,6 +6,9 @@ namespace Tests\Feature;
 
 use App\Console\Commands\AlpacaSmokeTestCommand;
 use App\Console\Commands\BrokerReadbackCommand;
+use App\Console\Commands\ConvexAutoCommand;
+use App\Console\Commands\ConvexIngestCommand;
+use App\Console\Commands\ConvexProbeCommand;
 use App\Console\Commands\LiveEquityProbeCommand;
 use App\Console\Commands\OptionAutopilotCommand;
 use App\Console\Commands\OptionIntentProducerCommand;
@@ -14,6 +17,12 @@ use App\Console\Commands\OptionReconcileCommand;
 use App\Console\Commands\OptionReviewProbeCommand;
 use App\Console\Commands\OptionsCapabilityReadbackCommand;
 use App\Console\Commands\ReconcileCommand;
+use App\Console\Commands\ThesisAddCommand;
+use App\Console\Commands\ThesisAssembleCommand;
+use App\Console\Commands\ThesisExecuteCommand;
+use App\Console\Commands\ThesisListCommand;
+use App\Console\Commands\ThesisSetCommand;
+use App\Console\Commands\ThesisValidateCommand;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
 use Tests\TestCase;
@@ -26,6 +35,9 @@ use Tests\TestCase;
 class ConfigPropagationTest extends TestCase
 {
     private const COMMANDS = [
+        ConvexAutoCommand::class,
+        ConvexIngestCommand::class,
+        ConvexProbeCommand::class,
         AlpacaSmokeTestCommand::class,
         BrokerReadbackCommand::class,
         LiveEquityProbeCommand::class,
@@ -36,6 +48,12 @@ class ConfigPropagationTest extends TestCase
         OptionIntentProducerCommand::class,
         OptionLivePlaceCommand::class,
         OptionAutopilotCommand::class,
+        ThesisAddCommand::class,
+        ThesisListCommand::class,
+        ThesisSetCommand::class,
+        ThesisAssembleCommand::class,
+        ThesisExecuteCommand::class,
+        ThesisValidateCommand::class,
     ];
 
     public function test_every_command_propagates_the_full_harness_block(): void
@@ -45,6 +63,8 @@ class ConfigPropagationTest extends TestCase
         config()->set('harness.allocation.per_play_max_debit', 7.5);
         config()->set('harness.allocation.per_day_max_debit', 33.0);
         config()->set('harness.alpaca.feed', 'sip');
+        config()->set('harness.convex.auto_entry_enabled', false);
+        config()->set('harness.convex.min_quote_fresh_seconds', 123);
 
         foreach (self::COMMANDS as $class) {
             $cfg = (new $class)->assembleConfig();
@@ -65,8 +85,26 @@ class ConfigPropagationTest extends TestCase
                 'greeks',
                 'alpaca',
                 'telemetry',
+                'thesis',
+                'convex',
             ] as $key) {
                 $this->assertArrayHasKey($key, $cfg, "$class cfg assembly missing '$key'");
+            }
+
+            $this->assertSame('convex-wrapper-napkin-v1', $cfg['convex']['policy_version']);
+            $this->assertContains('SPY', $cfg['convex']['tickers']);
+            $this->assertFalse($cfg['convex']['auto_entry_enabled']);
+            $this->assertSame(123, $cfg['convex']['min_quote_fresh_seconds']);
+
+            foreach ([
+                'enabled', 'max_open_positions', 'per_play_max_debit', 'per_day_max_debit',
+                'dte_floor', 'dte_ceiling', 'approval', 'entry',
+            ] as $key) {
+                $this->assertArrayHasKey($key, $cfg['thesis'] ?? [], "$class thesis block missing '$key'");
+            }
+
+            foreach (['window_close_et', 'reprice_seconds', 'max_chase_bps'] as $key) {
+                $this->assertArrayHasKey($key, $cfg['thesis']['entry'] ?? [], "$class thesis.entry block missing '$key'");
             }
 
             foreach (['per_day_max_debit', 'per_play_max_debit', 'per_symbol_max_debit', 'max_open_positions'] as $key) {
@@ -141,6 +179,30 @@ class ConfigPropagationTest extends TestCase
         $cfg = (new BrokerReadbackCommand)->assembleConfig();
 
         $this->assertNotSame('', (string) $cfg['agentic_account'], 'agentic account pin must never be empty');
+    }
+
+    public function test_thesis_entry_window_values_reach_both_thesis_lane_commands(): void
+    {
+        config()->set('harness.thesis.entry.window_close_et', '10:05');
+        config()->set('harness.thesis.entry.reprice_seconds', 30);
+        config()->set('harness.thesis.entry.max_chase_bps', 90.0);
+
+        foreach ([ThesisAssembleCommand::class, ThesisExecuteCommand::class] as $class) {
+            $cfg = (new $class)->assembleConfig();
+
+            $this->assertSame('10:05', $cfg['thesis']['entry']['window_close_et'], "$class dropped window_close_et");
+            $this->assertSame(30, $cfg['thesis']['entry']['reprice_seconds'], "$class dropped reprice_seconds");
+            $this->assertSame(90.0, $cfg['thesis']['entry']['max_chase_bps'], "$class dropped max_chase_bps");
+        }
+    }
+
+    public function test_thesis_entry_defaults_are_the_no_chase_window(): void
+    {
+        $cfg = (new ThesisExecuteCommand)->assembleConfig();
+
+        $this->assertSame('10:15', $cfg['thesis']['entry']['window_close_et']);
+        $this->assertSame(45, $cfg['thesis']['entry']['reprice_seconds']);
+        $this->assertSame(150.0, $cfg['thesis']['entry']['max_chase_bps']);
     }
 
     public function test_options_producer_default_universe_is_dynamic_and_broad(): void
