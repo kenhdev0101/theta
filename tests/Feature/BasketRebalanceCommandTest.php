@@ -31,6 +31,8 @@ class BasketRebalanceCommandTest extends TestCase
 
     private bool $fills = false;
 
+    private bool $differentBrokerRefs = false;
+
     private ?string $placeError = null;
 
     private array $positions = [];
@@ -60,7 +62,7 @@ class BasketRebalanceCommandTest extends TestCase
             $body = match ($tool) {
                 'get_portfolio' => ['settled_cash' => $this->cash, 'buying_power' => ['buying_power' => $this->buyingPower ?? $this->cash, 'unleveraged_buying_power' => $this->unleveraged ?? $this->buyingPower ?? $this->cash]],
                 'get_equity_positions' => ['positions' => $this->positions],
-                'get_equity_orders' => ['orders' => array_map(fn ($row) => ['id' => $row['order_id'], 'ref_id' => $row['ref_id'], 'symbol' => $row['symbol'], 'side' => 'buy', 'state' => $this->fills ? 'filled' : 'queued', 'cumulative_quantity' => $this->fills ? (float) $row['dollar_amount'] / 10 : 0, 'average_price' => $this->fills ? 10 : null], $this->placed)],
+                'get_equity_orders' => ['orders' => array_map(fn ($row) => ['id' => $row['order_id'], 'ref_id' => $this->differentBrokerRefs ? 'broker-'.$row['ref_id'] : $row['ref_id'], 'symbol' => $row['symbol'], 'side' => 'buy', 'state' => $this->fills ? 'filled' : 'queued', 'cumulative_quantity' => $this->fills ? (float) $row['dollar_amount'] / 10 : 0, 'average_price' => $this->fills ? 10 : null], $this->placed)],
                 'get_option_orders' => ['orders' => []],
                 'get_equity_tradability' => ['results' => array_map(fn ($symbol) => ['symbol' => $symbol, 'state' => 'active', 'tradeable' => true, 'fractional_tradability' => 'tradable'], $args['symbols'])],
                 'get_equity_quotes' => ['results' => array_map(fn ($symbol) => ['quote' => ['symbol' => $symbol, 'bid_price' => '9.99', 'ask_price' => '10.01', 'venue_bid_time' => now()->toISOString(), 'venue_ask_time' => now()->toISOString()]], $args['symbols'])],
@@ -75,7 +77,7 @@ class BasketRebalanceCommandTest extends TestCase
                 }
                 $args['order_id'] = 'broker-'.count($this->placed);
                 $this->placed[] = $args;
-                $body = ['order' => ['id' => $args['order_id'], 'state' => 'queued', 'ref_id' => $args['ref_id']]];
+                $body = ['order' => ['id' => $args['order_id'], 'state' => 'queued', 'ref_id' => $this->differentBrokerRefs ? 'broker-'.$args['ref_id'] : $args['ref_id']]];
             }
 
             return Http::response(['jsonrpc' => '2.0', 'id' => $payload['id'], 'result' => ['isError' => false, 'content' => [['type' => 'text', 'text' => json_encode(['data' => $body])]]]]);
@@ -279,6 +281,18 @@ class BasketRebalanceCommandTest extends TestCase
         $requestCount = count(Http::recorded());
         $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
         $this->assertSame($requestCount, count(Http::recorded()), 'a completed batch no longer spends broker API credits');
+        $this->assertCount(3, $this->placed);
+    }
+
+    public function test_broker_rewritten_reference_still_reconciles_by_acknowledged_order_id(): void
+    {
+        $this->differentBrokerRefs = true;
+        $event = $this->preview();
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->fills = true;
+        $this->artisan('theta:basket-rebalance', ['--arm' => true])->assertSuccessful();
+        $this->assertSame('reconciled', $event->refresh()->status);
+        $this->assertEquals(100, $event->cash_deployed);
         $this->assertCount(3, $this->placed);
     }
 

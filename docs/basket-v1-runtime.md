@@ -15,7 +15,7 @@ The desk authorized up to 39 positions **for the basket only** on November 3, 20
 
 ## Retry and reconciliation
 
-A selected event fixes both symbols and dollar amounts. Each leg has an event-scoped logical order ID and durable broker reference. An API credit rejection before dispatch leaves the same reference retryable. An unknown placement outcome freezes the batch for reconciliation rather than generating a replacement order. Working account orders block additional admissions until readback resolves them. A completed event never creates another batch.
+A selected event fixes both symbols and dollar amounts. Each leg has an event-scoped logical order ID and durable broker reference. An API credit rejection before dispatch leaves the same reference retryable. An unknown placement outcome freezes the batch for reconciliation rather than generating a replacement order. Working account orders block additional admissions until readback resolves them. A completed event never creates another batch and stops polling the broker. Robinhood can rewrite an order’s `ref_id` during its approval flow, so the order UUID captured from the placement acknowledgment is the authoritative readback link; the harness keeps its original logical reference for duplicate prevention. The first five launch records were repaired from saved acknowledgments and verified broker fills, without submitting replacement orders.
 
 `cash_deployed` counts broker-confirmed executed quantity × fill price plus fees. A submitted order is not a fill. The existing trade journal stores fill quantities and prices under strategy `theta_basket_etf`; legs link by `client_ref_id` and broker order ID. Event notes record tick time, trigger, submissions in that tick, and concrete blockers.
 
