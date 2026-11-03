@@ -105,3 +105,11 @@ if ((bool) config('harness.thesis.enabled', false)) {
     Schedule::command('theta:option-reconcile --strategy=thesis_position')
         ->weekdays()->everyMinute()->withoutOverlapping();
 }
+
+// Execute only the explicitly selected initial basket event; never create a
+// fresh daily batch. The command owns the same account lock as Convex.
+if ((bool) config('harness.basket.enabled', false)) {
+    Schedule::command('theta:basket-rebalance --arm --trigger=scheduled')
+        ->weekdays()->timezone('America/New_York')->everyMinute()
+        ->between('9:30', '16:10')->withoutOverlapping(5)->runInBackground();
+}

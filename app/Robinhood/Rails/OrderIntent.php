@@ -25,6 +25,9 @@ final class OrderIntent implements ReservableIntent
         public readonly string $marketHours = 'regular_hours',
         public readonly string $assetClass = 'equity',
         public readonly string $source = 'manual_probe',
+        public readonly ?string $logicalOrderId = null,
+        public readonly string $strategyLabel = 'theta_equity_probe',
+        public readonly array $metadata = [],
     ) {}
 
     /**
@@ -55,6 +58,10 @@ final class OrderIntent implements ReservableIntent
      */
     public function intentKey(string $tradingDay): string
     {
+        if ($this->logicalOrderId !== null) {
+            return hash('sha256', 'durable|'.$this->strategyLabel.'|'.$this->logicalOrderId);
+        }
+
         return hash('sha256', implode('|', [
             $tradingDay,
             $this->assetClass,
@@ -92,6 +99,9 @@ final class OrderIntent implements ReservableIntent
             'market_hours' => $this->marketHours,
             'asset_class' => $this->assetClass,
             'source' => $this->source,
+            'logical_order_id' => $this->logicalOrderId,
+            'strategy_label' => $this->strategyLabel,
+            'metadata' => $this->metadata,
         ];
     }
 }

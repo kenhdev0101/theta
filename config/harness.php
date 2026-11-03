@@ -300,4 +300,17 @@ return [
         'grant_warn_hours' => (int) env('HARNESS_MONITOR_GRANT_WARN_HOURS', 24),
         'snapshot_stale_seconds' => (int) env('HARNESS_MONITOR_SNAPSHOT_STALE_SECONDS', 180),
     ],
+    'basket' => [
+        'enabled' => false,
+        'armed' => false,
+        'active_event_id' => null,
+        'weights_path' => base_path('docs/weighting-basket.csv'),
+        'strategy_label' => 'theta_basket_etf',
+        'buy_threshold_usd' => 1.0,
+        'min_leg_notional_usd' => 1.0,
+        'max_open_positions' => 8,
+        'max_orders_per_tick' => 5,
+        'owner' => 'desk',
+        'agent_id' => 'codex/root',
+    ],
 ];

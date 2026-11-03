@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Robinhood\Execution;
 
 use App\Models\RobinhoodTradeJournal;
+use App\Robinhood\Mcp\BrokerCreditExhausted;
+use App\Robinhood\Mcp\PortfolioReader;
 use App\Robinhood\Mcp\RobinhoodMcpClient;
 use App\Robinhood\Rails\OrderIntent;
 use App\Robinhood\Rails\RailPipeline;
@@ -73,27 +75,34 @@ final class EquityExecutor
 
         $order = $this->orderPayload($intent);
 
+        if ($intent->logicalOrderId !== null) {
+            $ref->forceFill(['status' => 'submitting'])->save();
+        }
         try {
             $placement = $this->client->placeEquityOrder($order, $ref->client_ref_id);
+        } catch (BrokerCreditExhausted $e) {
+            $ref->forceFill(['status' => 'reserved'])->save();
+            throw $e;
         } catch (\Throwable $e) {
-            $this->refs->markFailed($ref, $e->getMessage());
+            $this->refs->markFailed($ref, class_basename($e));
 
             $journal = $this->journal($intent, $ref->client_ref_id, 'rejected', [
                 'rail_verdict' => $verdict->toArray(),
-                'placement_error' => $e->getMessage(),
+                'placement_error' => class_basename($e),
             ]);
 
             $this->telemetry->record('execution', [
                 'event' => 'place_failed',
                 'client_ref_id' => $ref->client_ref_id,
                 'symbol' => strtoupper($intent->symbol),
-                'error' => $e->getMessage(),
+                'error' => class_basename($e),
                 'journal_id' => $journal->id,
             ]);
 
             throw $e;
         }
 
+        $placement = PortfolioReader::unwrap($placement);
         $brokerOrderId = $placement['order_id'] ?? $placement['id'] ?? null;
         $this->refs->markPlaced($ref, is_string($brokerOrderId) ? $brokerOrderId : null);
 
@@ -173,10 +182,12 @@ final class EquityExecutor
     private function safeReview(OrderIntent $intent): array
     {
         try {
-            return $this->client->reviewEquityOrder($this->orderPayload($intent));
+            return PortfolioReader::unwrap($this->client->reviewEquityOrder($this->orderPayload($intent)));
+        } catch (BrokerCreditExhausted $e) {
+            throw $e;
         } catch (\Throwable $e) {
             // A failed review is a block (review_rejected), never a pass-through.
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'error' => class_basename($e)];
         }
     }
 
@@ -198,8 +209,8 @@ final class EquityExecutor
                 'dollar_amount' => $intent->dollarAmount,
                 'limit_price' => $intent->limitPrice,
                 'stop_price' => $intent->stopPrice,
-                'strategy_label' => 'theta_equity_probe',
-                'scanner_payload' => ['intent_source' => $intent->source],
+                'strategy_label' => $intent->strategyLabel,
+                'scanner_payload' => ['intent_source' => $intent->source, 'logical_order_id' => $intent->logicalOrderId, 'strategy_metadata' => $intent->metadata],
                 'notes' => $notes,
             ], $extra),
         );
