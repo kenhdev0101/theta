@@ -1,9 +1,9 @@
 rank,ticker,name,lane,capex_beta,handle,friction,oracle,score
-1,MURGY,Munich Re,AI-insurance,0,OTC,8,3,6.8
-2,TYL,Tyler Technologies,Govtech cleanup,0,public,8,4,6.4
-3,SAIL,SailPoint,Z2 cleanup,0,public,8,5,6.0
-4,TRI,Thomson Reuters,Legal gov,0,public,8,5,6.0
-5,RELX,RELX,Legal gov,0,ADR,8,5,6.0
+1,TYL,Tyler Technologies,Govtech cleanup,0,public,8,4,6.4
+2,SAIL,SailPoint,Z2 cleanup,0,public,8,5,6.0
+3,TRI,Thomson Reuters,Legal gov,0,public,8,5,6.0
+4,RELX,RELX,Legal gov,0,ADR,8,5,6.0
+5,MURGY,Munich Re,AI-insurance,0,OTC,7,3,5.95
 6,WTKWY,Wolters Kluwer,Governance SW,0,OTC,7,3,5.95
 7,ZS,Zscaler,Z2 cleanup,0,public,8,6,5.6
 8,VRNS,Varonis,Z2 cleanup,0,public,7,4,5.6
@@ -12,41 +12,41 @@ rank,ticker,name,lane,capex_beta,handle,friction,oracle,score
 11,WK,Workiva,Governance SW,0,public,7,4,5.6
 12,FFIV,F5,Z2 cleanup,0,public,7,5,5.25
 13,PANW,Palo Alto Networks,Z2 cleanup,0,public,8,7,5.2
-14,VRSK,Verisk,Risk analytics,0,public,6,3,5.1
-15,DT,Dynatrace,Z2 cleanup,0,public,7,6,4.9
-16,SNOW,Snowflake,Z2 cleanup,0,public,7,6,4.9
-17,CRWD,CrowdStrike,Z2 cleanup,0,public,8,8,4.8
-18,INTA,Intapp,Legal gov,0,public,6,4,4.8
-19,NOW,ServiceNow,Z1 seller,0.5,public,7,7,4.55
-20,PLTR,Palantir,Z2 cleanup,0.5,public,9,10,4.5
-21,S,SentinelOne,Z2 cleanup,0,public,6,5,4.5
-22,OKTA,Okta,Z2 cleanup,0,public,6,5,4.5
-23,IBM,IBM,Z2 cleanup,0.5,public,6,5,4.5
-24,SSREY,Swiss Re,Reinsurer,0,OTC,5,2,4.5
-25,IT,Gartner,Advisory,0,public,6,5,4.5
-26,ESTC,Elastic,Grounding infra,0,public,6,5,4.5
-27,CFLT,Confluent,Grounding infra,0,public,6,5,4.5
-28,CACI,CACI,Gov IT,0,public,5,3,4.25
-29,BEZ,Beazley,Cyber carrier,0,home-only,5,3,4.25
-30,MMC,Marsh McLennan,Broker,0,public,5,3,4.25
-31,AON,Aon,Broker,0,public,5,3,4.25
-32,FORR,Forrester,Advisory,0,public,5,3,4.25
-33,BR,Broadridge,FinServ SW,0,public,5,3,4.25
-34,DDOG,Datadog,Z2 cleanup,0,public,7,8,4.2
-35,CHKP,Check Point,Z2 cleanup,0,public,5,4,4.0
-36,ICE,Intercontinental Exchange,Pred-mkt,0,public,5,4,4.0
-37,ASML,ASML,Silicon foundry-equip,1,public,6,7,3.9
-38,V,Visa,Z4 toll,0,public,5,5,3.75
-39,MA,Mastercard,Z4 toll,0,public,5,5,3.75
-40,HUBS,HubSpot,Z4 AEO,0,public,5,5,3.75
-41,WDAY,Workday,Grounding/seller,0.5,public,5,5,3.75
-42,RNR,RenaissanceRe,Reinsurer,0,public,4,2,3.6
-43,EG,Everest Group,Reinsurer,0,public,4,2,3.6
-44,AJG,Arthur J Gallagher,Broker,0,public,4,2,3.6
-45,WTW,Willis Towers Watson,Broker,0,public,4,2,3.6
-46,CB,Chubb,P&C carrier,0,public,4,2,3.6
-47,TRV,Travelers,P&C carrier,0,public,4,2,3.6
-48,HSX,Hiscox,Cyber carrier,0,home-only,4,2,3.6
+14,BEZ,Beazley,Cyber carrier,0,home-only,6,3,5.1
+15,MMC,Marsh McLennan,Broker,0,public,6,3,5.1
+16,AON,Aon,Broker,0,public,6,3,5.1
+17,VRSK,Verisk,Risk analytics,0,public,6,3,5.1
+18,DT,Dynatrace,Z2 cleanup,0,public,7,6,4.9
+19,SNOW,Snowflake,Z2 cleanup,0,public,7,6,4.9
+20,CRWD,CrowdStrike,Z2 cleanup,0,public,8,8,4.8
+21,INTA,Intapp,Legal gov,0,public,6,4,4.8
+22,NOW,ServiceNow,Z1 seller,0.5,public,7,7,4.55
+23,PLTR,Palantir,Z2 cleanup,0.5,public,9,10,4.5
+24,S,SentinelOne,Z2 cleanup,0,public,6,5,4.5
+25,OKTA,Okta,Z2 cleanup,0,public,6,5,4.5
+26,IBM,IBM,Z2 cleanup,0.5,public,6,5,4.5
+27,SSREY,Swiss Re,Reinsurer,0,OTC,5,2,4.5
+28,AJG,Arthur J Gallagher,Broker,0,public,5,2,4.5
+29,WTW,Willis Towers Watson,Broker,0,public,5,2,4.5
+30,CB,Chubb,P&C carrier,0,public,5,2,4.5
+31,HSX,Hiscox,Cyber carrier,0,home-only,5,2,4.5
+32,IT,Gartner,Advisory,0,public,6,5,4.5
+33,ESTC,Elastic,Grounding infra,0,public,6,5,4.5
+34,CFLT,Confluent,Grounding infra,0,public,6,5,4.5
+35,CACI,CACI,Gov IT,0,public,5,3,4.25
+36,FORR,Forrester,Advisory,0,public,5,3,4.25
+37,BR,Broadridge,FinServ SW,0,public,5,3,4.25
+38,DDOG,Datadog,Z2 cleanup,0,public,7,8,4.2
+39,CHKP,Check Point,Z2 cleanup,0,public,5,4,4.0
+40,ICE,Intercontinental Exchange,Pred-mkt,0,public,5,4,4.0
+41,ASML,ASML,Silicon foundry-equip,1,public,6,7,3.9
+42,V,Visa,Z4 toll,0,public,5,5,3.75
+43,MA,Mastercard,Z4 toll,0,public,5,5,3.75
+44,HUBS,HubSpot,Z4 AEO,0,public,5,5,3.75
+45,WDAY,Workday,Grounding/seller,0.5,public,5,5,3.75
+46,RNR,RenaissanceRe,Reinsurer,0,public,4,2,3.6
+47,EG,Everest Group,Reinsurer,0,public,4,2,3.6
+48,TRV,Travelers,P&C carrier,0,public,4,2,3.6
 49,RGP,Resources Connection,Consulting,0,public,4,2,3.6
 50,SAP,SAP,Z1 seller,0.5,ADR,5,6,3.5
 51,CSCO,Cisco,Z2 cleanup,0.5,public,5,6,3.5
